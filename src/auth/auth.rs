@@ -1,6 +1,6 @@
 use crate::auth::sha256::hash_password;
 use mongodb::bson::{doc, Document};
-use mongodb::{Client};
+use mongodb::{Client, Collection};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -22,14 +22,10 @@ pub struct LoginResponse {
 
 pub async fn login(
     body: LoginRequest,
-    client: Arc<Client>,
+    client: Arc<Collection<Document>>,
 ) -> Result<impl warp::Reply, Infallible> {
-    let db = client.database("myApp");
-    let collection = db.collection::<Document>("users");
-
-    // Поиск пользователя по `id`
     let filter = doc! { "_id": &body.id, "password": hash_password(&body.password) };
-    let user = collection.find_one(filter, None).await.unwrap();
+    let user = client.find_one(filter, None).await.unwrap();
 
     if !user.is_some() {
         return Ok(warp::reply::with_status(
@@ -58,14 +54,11 @@ pub async fn login(
 // ==== [РЕГИСТРАЦИЯ] ====
 pub async fn register(
     body: LoginRequest,
-    client: Arc<Client>,
+    client: Arc<Collection<Document>>,
 ) -> Result<impl warp::Reply, Infallible> {
-    let start = Instant::now();
+    let start: Instant = Instant::now();
 
-    let db = client.database("myApp");
-    let collection = db.collection::<Document>("users");
-
-    let user = collection
+    let user = client
         .find_one(doc! {"_id": body.id.clone()}, None)
         .await
         .unwrap();
@@ -79,7 +72,7 @@ pub async fn register(
 
     let hashed_password = hash_password(&body.password);
 
-    let result: mongodb::results::InsertOneResult = collection
+    let result: mongodb::results::InsertOneResult = client
         .insert_one(
             doc! {
                 "_id": &body.id,
