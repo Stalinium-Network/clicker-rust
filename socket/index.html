@@ -25,4 +25,8 @@
   socket.on("error", (error) => {
     console.log("error", error); // Лучше логировать саму ошибку
   });
+
+  socket.on("message-back", data => {
+    console.log(data)
+  })
 </script>
