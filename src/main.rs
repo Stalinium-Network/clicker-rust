@@ -1,6 +1,7 @@
 use mongodb::{bson::Document, options::ClientOptions, Client};
 use std::sync::Arc;
 use warp::Filter;
+
 mod auth;
 mod socket;
 
@@ -31,13 +32,20 @@ async fn main() {
 
     let routes = login_route.or(register_route);
 
-    let port = 3000;
+    let port = 3001;
 
-    println!("Server started on port {:?}", port);
+    // Создание обработчиков для Warp
+    let cors = warp::cors().allow_any_origin();
+    let warp_routes = routes.with(cors);
 
-    socket::io::main(shared_collection_clone).await;
+    // Запуск HTTP сервера с использованием Warp
+    let warp_server = warp::serve(warp_routes).run(([127, 0, 0, 1], port));
 
-    warp::serve(routes).run(([127, 0, 0, 1], port)).await;
+    // Запуск WebSocket (Socket.IO) сервера с использованием Axum
+    let socket_io_server = socket::io::main(shared_collection_clone);
+
+    // Параллельный запуск обоих серверов
+    tokio::join!(warp_server, socket_io_server);
 }
 
 

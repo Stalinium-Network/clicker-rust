@@ -70,6 +70,21 @@ pub async fn register(
         ));
     }
 
+
+    if body.id.len() > 100 || body.password.len() > 100 {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"too big name or password"),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
+    if body.id.len() < 4 || body.password.len() < 4 {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"minimum name or password length = 4"),
+            StatusCode::BAD_REQUEST,
+        ));
+    }
+
     let hashed_password = hash_password(&body.password);
 
     let result: mongodb::results::InsertOneResult = client
