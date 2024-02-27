@@ -11,14 +11,21 @@ use tracing::{error, info};
 use tracing_subscriber::FmtSubscriber;
 use std::collections::HashMap;
 use std::ptr::null;
+use serde::Deserialize;
+use tokio::net::TcpListener;
 
 
 struct UserData {
     data: Document,
 }
 
+#[derive(Deserialize)]
+struct BuyData {
+    action: String,
+}
 
-async fn on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>) {
+
+async fn on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, io: SocketIo) {
     info!("Socket.IO connected: {:?} {:?}", client.ns(), client.id);
     let uri_string = client.req_parts().uri.clone().to_string(); // Создаем строку из URI
     let query = uri_string.split_once('?').map_or("", |(_, q)| q); // Теперь `uri_string` живет достаточно долго
@@ -66,7 +73,7 @@ async fn on_connect(client: SocketRef, shared_collection: Arc<Collection<Documen
         client.emit("message-back", doc! {"id": "1"}).ok();
     });
 
-    client.on("msg-t2", move |client: SocketRef, Data::<String>(msg)| {
+    client.on("buy", move |client: SocketRef, Data::<BuyData>(data)| {
         // info!("Received event: {:?}, from user: {:?}", msg, user);
 
 
@@ -80,8 +87,10 @@ pub async fn main(shared_collection: Arc<Collection<Document>>) -> Result<(), Bo
 
     let (layer, io) = SocketIo::new_layer();
 
-    io.ns("/", |socket: SocketRef| {
-        on_connect(socket, shared_collection)
+    let io_clone = io.clone();
+
+    io.ns("/", move |socket: SocketRef| {
+        on_connect(socket, shared_collection, io_clone)
     });
 
     let app =
@@ -89,13 +98,14 @@ pub async fn main(shared_collection: Arc<Collection<Document>>) -> Result<(), Bo
             .layer(
                 ServiceBuilder::new()
                     .layer(CorsLayer::permissive())
-                    .layer(layer),
+                    .layer(layer)
             );
 
     println!("socket io started");
 
-    axum::Server::bind(&"127.0.0.1:3000".parse().unwrap())
-        .serve(app.into_make_service())
+    let listener = TcpListener::bind("127.0.0.1:3002").await.unwrap();
+
+    axum::serve(listener, app.into_make_service())
         .await?;
 
     Ok(())

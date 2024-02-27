@@ -24,6 +24,8 @@ pub async fn login(
     body: LoginRequest,
     client: Arc<Collection<Document>>,
 ) -> Result<impl warp::Reply, Infallible> {
+    println!("login Req");
+
     let filter = doc! { "_id": &body.id, "password": hash_password(&body.password) };
     let user = client.find_one(filter, None).await.unwrap();
 
@@ -45,7 +47,7 @@ pub async fn login(
 
     // Отправка ответа
     Ok(warp::reply::with_status(
-        warp::reply::json(&response), 
+        warp::reply::json(&response),
         StatusCode::OK
     ))
 }
@@ -57,6 +59,7 @@ pub async fn register(
     client: Arc<Collection<Document>>,
 ) -> Result<impl warp::Reply, Infallible> {
     let start: Instant = Instant::now();
+    println!("register Req");
 
     let user = client
         .find_one(doc! {"_id": body.id.clone()}, None)
