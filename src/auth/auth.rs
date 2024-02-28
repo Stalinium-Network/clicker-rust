@@ -35,7 +35,7 @@ pub async fn login(
 
     if !user.is_some() {
         return (
-            StatusCode::NOT_FOUND,
+            StatusCode::BAD_REQUEST,
             Json(create_error("Неправильный логин или пароль")),
         );
     }

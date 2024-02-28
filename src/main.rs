@@ -60,7 +60,6 @@ async fn main() {
 
     // Routing
     let app = Router::new()
-        // .layer(TraceLayer::new_for_http())
         .route("/login", post(login_route))
         .route("/signup", post(register_route))
         .layer(layout) // Применение слоя Socket.IO
