@@ -1,7 +1,17 @@
-use mongodb::{bson::Document, options::ClientOptions, Client};
+use mongodb::{bson::Document, options::ClientOptions, Client, Collection};
 use std::sync::Arc;
-use warp::Filter;
-use warp::http::Method;
+use axum::handler::Handler;
+use axum::{Json, Router};
+use axum::routing::{post};
+use serde::{Deserialize, Serialize};
+use socketioxide::extract::SocketRef;
+use socketioxide::SocketIo;
+use tokio::net::TcpListener;
+use tower::ServiceBuilder;
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tracing_subscriber::fmt::layer;
+use crate::auth::auth::LoginRequest;
+use crate::socket::io::io_on_connect;
 
 mod auth;
 mod socket;
@@ -16,50 +26,50 @@ async fn main() {
     let shared_collection: Arc<mongodb::Collection<Document>> = Arc::new(collection);
 
     let shared_collection_clone = Arc::clone(&shared_collection);
-    let with_collection = warp::any().map(move || Arc::clone(&shared_collection.clone()));
 
 
-    let login_route = warp::post()
-        .and(warp::path("login"))
-        .and(warp::body::json())
-        .and(with_collection.clone())
-        .and_then(auth::auth::login);
+    let login_route = {
+        let shared_collection = Arc::clone(&shared_collection);
+        move |body: Json<LoginRequest>| {
+            let shared_collection = Arc::clone(&shared_collection);
+            async move {
+                auth::auth::login(body, shared_collection).await // Используйте body.0 для доступа к LoginRequest
+            }
+        }
+    };
 
-    let register_route = warp::post()
-        .and(warp::path("signup"))
-        .and(warp::body::json())
-        .and(with_collection)
-        .and_then(auth::auth::register);
+    let register_route = {
+        let shared_collection = Arc::clone(&shared_collection);
+        move |body: Json<LoginRequest>| {
+            let shared_collection = Arc::clone(&shared_collection);
+            async move {
+                auth::auth::register(body, shared_collection).await // Используйте body.0 для доступа к LoginRequest
+            }
+        }
+    };
 
+    // SocketIO
+    let (layout, io) = SocketIo::new_layer();
+    let io_clone = io.clone();
 
-    let port = 3001;
+    let cors = CorsLayer::new().allow_origin(AllowOrigin::any()); // Разрешение запросов со всех источников
 
-    // Настройка CORS
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_headers(vec![
-            "User-Agent", "Sec-Fetch-Mode", "Referer", "Origin",
-            "Access-Control-Request-Method", "Access-Control-Request-Headers",
-            "Content-Type" // Убедитесь, что Content-Type разрешен
-        ])
-        .allow_methods(vec!["POST", "GET"]);
+    io.ns("/", move |_s: SocketRef| {
+        return io_on_connect(_s, shared_collection_clone, io_clone);
+    });
 
-    // Добавление обработчика для OPTIONS
-    let options_route = warp::options()
-        .map(|| warp::reply::with_header("OK", "Access-Control-Allow-Origin", "*"));
+    // Routing
+    let app = Router::new()
+        // .layer(TraceLayer::new_for_http())
+        .route("/login", post(login_route))
+        .route("/signup", post(register_route))
+        .layer(layout) // Применение слоя Socket.IO
+        .layer(cors) // Применение слоя CORS
+        .layer(CorsLayer::permissive());
 
-    // Комбинирование всех маршрутов с поддержкой CORS
-    let routes = login_route
-        .or(register_route)
-        .or(options_route)
-        .with(cors);
+    let listener = TcpListener::bind("127.0.0.1:3001").await.unwrap();
 
-    // Запуск HTTP сервера с использованием Warp
-    let warp_server = warp::serve(routes).run(([127, 0, 0, 1], port));
-
-    // Запуск Socket.IO сервера с использованием Axum
-    let socket_io_server = socket::io::main(shared_collection_clone);
-
-    // Параллельный запуск обоих серверов
-    tokio::join!(warp_server, socket_io_server);
+    axum::serve(listener, app.into_make_service())
+        .await;
 }
+

@@ -25,7 +25,7 @@ struct BuyData {
 }
 
 
-async fn on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, io: SocketIo) {
+pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, io: SocketIo) {
     info!("Socket.IO connected: {:?} {:?}", client.ns(), client.id);
     let uri_string = client.req_parts().uri.clone().to_string(); // Создаем строку из URI
     let query = uri_string.split_once('?').map_or("", |(_, q)| q); // Теперь `uri_string` живет достаточно долго
@@ -80,37 +80,6 @@ async fn on_connect(client: SocketRef, shared_collection: Arc<Collection<Documen
         client.emit("message-back", doc! {"id": "2"}).ok();
     });
 }
-
-// #[tokio::main]
-pub async fn main(shared_collection: Arc<Collection<Document>>) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::subscriber::set_global_default(FmtSubscriber::default())?;
-
-    let (layer, io) = SocketIo::new_layer();
-
-    let io_clone = io.clone();
-
-    io.ns("/", move |socket: SocketRef| {
-        on_connect(socket, shared_collection, io_clone)
-    });
-
-    let app =
-        axum::Router::new()
-            .layer(
-                ServiceBuilder::new()
-                    .layer(CorsLayer::permissive())
-                    .layer(layer)
-            );
-
-    println!("socket io started");
-
-    let listener = TcpListener::bind("127.0.0.1:3002").await.unwrap();
-
-    axum::serve(listener, app.into_make_service())
-        .await?;
-
-    Ok(())
-}
-
 
 fn parse_query_string(query: &str) -> HashMap<String, String> {
     query.split('&')

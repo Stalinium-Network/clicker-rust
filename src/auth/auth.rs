@@ -1,11 +1,13 @@
-use crate::auth::sha256::hash_password;
-use mongodb::bson::{doc, Document};
-use mongodb::{Client, Collection};
-use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
 use std::sync::Arc;
-use warp::http::StatusCode;
-use std::time::Instant;
+use axum::{Extension, Json};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use mongodb::bson::{doc, Document};
+use mongodb::Collection;
+use serde::{Deserialize, Serialize};
+use tokio::time::Instant;
+use crate::auth::sha256::hash_password;
+
 
 
 #[derive(Deserialize)]
@@ -18,46 +20,46 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     id: String,
     password: String,
+    error: Option<String>,
 }
 
+
 pub async fn login(
-    body: LoginRequest,
+    Json(body): Json<LoginRequest>,
     client: Arc<Collection<Document>>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl IntoResponse  {
     println!("login Req");
 
     let filter = doc! { "_id": &body.id, "password": hash_password(&body.password) };
     let user = client.find_one(filter, None).await.unwrap();
 
     if !user.is_some() {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Неправильный логин или пароль"),
+        return (
             StatusCode::NOT_FOUND,
-        ));
+            Json(create_error("Неправильный логин или пароль")),
+        );
     }
-
 
 
     println!("{:?}", user);
 
-    let response: LoginResponse = LoginResponse {
-        id: body.id.clone(),
-        password: body.password.clone(),
-    };
-
     // Отправка ответа
-    Ok(warp::reply::with_status(
-        warp::reply::json(&response),
-        StatusCode::OK
-    ))
+    return (
+        StatusCode::OK,
+        Json(LoginResponse {
+            id: body.id.clone(),
+            password: body.password.clone(),
+            error: None,
+        })
+    )
 }
 
 
 // ==== [РЕГИСТРАЦИЯ] ====
 pub async fn register(
-    body: LoginRequest,
+    Json(body): Json<LoginRequest>,
     client: Arc<Collection<Document>>,
-) -> Result<impl warp::Reply, Infallible> {
+) -> impl IntoResponse {
     let start: Instant = Instant::now();
     println!("register Req");
 
@@ -67,25 +69,25 @@ pub async fn register(
         .unwrap();
 
     if user.is_some() {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"User already exists"),
+        return (
             StatusCode::CONFLICT,
-        ));
+            Json(create_error("User already exists")),
+        );
     }
 
 
     if body.id.len() > 100 || body.password.len() > 100 {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"too big name or password"),
+        return (
             StatusCode::BAD_REQUEST,
-        ));
+            Json(create_error("too big name or password")),
+        );
     }
 
     if body.id.len() < 4 || body.password.len() < 4 {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"minimum name or password length = 4"),
+        return (
             StatusCode::BAD_REQUEST,
-        ));
+            Json(create_error("minimum name or password length = 4")),
+        );
     }
 
     let hashed_password = hash_password(&body.password);
@@ -111,8 +113,21 @@ pub async fn register(
     let duration = start.elapsed(); // Окончание замера времени
     println!("Время выполнения: {:?}", duration);
 
-    return Ok(warp::reply::with_status(
-        warp::reply::json(&"OK"),
+    return (
         StatusCode::OK,
-    ));
+        Json(LoginResponse {
+            id: body.id.clone(),
+            password: body.password.clone(),
+            error: None,
+        })
+    );
+}
+
+fn create_error(msg: &str) -> LoginResponse {
+    let res = LoginResponse {
+        id: "".to_string(),
+        password: "".to_string(),
+        error: Some(msg.to_string()),
+    };
+    return res;
 }
