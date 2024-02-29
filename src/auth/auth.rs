@@ -7,8 +7,7 @@ use mongodb::Collection;
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 use crate::auth::sha256::hash_password;
-
-
+use crate::database::user_db;
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -27,7 +26,7 @@ pub struct LoginResponse {
 pub async fn login(
     Json(body): Json<LoginRequest>,
     client: Arc<Collection<Document>>,
-) -> impl IntoResponse  {
+) -> impl IntoResponse {
     println!("login Req");
 
     let filter = doc! { "_id": &body.id, "password": hash_password(&body.password) };
@@ -51,7 +50,7 @@ pub async fn login(
             password: body.password.clone(),
             error: None,
         })
-    )
+    );
 }
 
 
@@ -90,23 +89,7 @@ pub async fn register(
         );
     }
 
-    let hashed_password = hash_password(&body.password);
-
-    let result: mongodb::results::InsertOneResult = client
-        .insert_one(
-            doc! {
-                "_id": &body.id,
-                "password": hashed_password,
-                "balance": 0,
-                "tools": {
-                    "autoclicker": 0,
-                    "click": 0
-                }
-            },
-            None,
-        )
-        .await
-        .unwrap();
+    let result: mongodb::results::InsertOneResult = user_db::set_new_user(client, &body.id, &body.password).await;
 
     println!("{:?}", result);
 

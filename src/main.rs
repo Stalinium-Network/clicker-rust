@@ -15,6 +15,7 @@ use crate::socket::io::io_on_connect;
 
 mod auth;
 mod socket;
+mod database;
 
 
 #[tokio::main]

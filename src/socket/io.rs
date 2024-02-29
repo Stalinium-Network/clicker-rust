@@ -24,23 +24,23 @@ struct BuyData {
     action: String,
 }
 
-struct ItemStats {
+struct DefaultGameStatsItemStats {
     cost: i64,
     amount: i64,
     value: i64,
 }
 
-struct Speed {
+struct DefaultGameStatsSpeed {
     cost: i64,
     unlocked: bool,
     multiplier: i64,
 }
 
-struct Reset {
+struct DefaultGameStatsReset {
     minCost: i64,
 }
 
-struct OtherUpgrades {
+struct DefaultGameStatsOtherUpgrades {
     higherHackAmount: bool,
     betterFirewall: bool,
     covertHacks: bool,
@@ -49,13 +49,13 @@ struct OtherUpgrades {
 
 struct DefaultGameStats {
     money: i64,
-    mpc: ItemStats,
-    auto: ItemStats,
-    triple: ItemStats,
-    superAuto: ItemStats,
-    speed: Speed,
-    reset: Reset,
-    otherUpgrades: OtherUpgrades,
+    mpc: DefaultGameStatsItemStats,
+    auto: DefaultGameStatsItemStats,
+    triple: DefaultGameStatsItemStats,
+    superAuto: DefaultGameStatsItemStats,
+    speed: DefaultGameStatsSpeed,
+    reset: DefaultGameStatsReset,
+    otherUpgrades: DefaultGameStatsOtherUpgrades,
 }
 
 
@@ -132,12 +132,12 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         Ok(None) => {
             // Пользователь не найден
             println!("ok2 {:?}", result);
-            client.emit("error", "user not found, incorrect id or password");
+            client.emit("error", "401");
             client.disconnect();
             return;
         }
         Err(_) => {
-            client.emit("error", "Database query failed");
+            client.emit("error", "401");
             client.disconnect();
             return;
         }
