@@ -32,3 +32,8 @@ pub async fn set_new_user(db: Arc<Collection<Document>>, password: &str, id: &st
         .unwrap();
     result
 }
+
+
+// pub async  fn update_game_stats(db: Arc<Collection<Document>>, new_data) {
+
+// }

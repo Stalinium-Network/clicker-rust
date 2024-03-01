@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use crate::auth::sha256::hash_password;
 
 use axum;
@@ -11,35 +11,41 @@ use tracing::{error, info};
 use tracing_subscriber::FmtSubscriber;
 use std::collections::HashMap;
 use std::ptr::null;
-use serde::Deserialize;
+use mongodb::bson::to_document;
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 
 
 struct UserData {
     data: Document,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct BuyData {
     action: String,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
 struct DefaultGameStatsItemStats {
     cost: i64,
     amount: i64,
     value: i64,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
 struct DefaultGameStatsSpeed {
     cost: i64,
     unlocked: bool,
     multiplier: i64,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
 struct DefaultGameStatsReset {
     minCost: i64,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
 struct DefaultGameStatsOtherUpgrades {
     higherHackAmount: bool,
     betterFirewall: bool,
@@ -47,8 +53,9 @@ struct DefaultGameStatsOtherUpgrades {
     doubleHacks: bool,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
 struct DefaultGameStats {
-    money: i64,
+    balance: i64,
     mpc: DefaultGameStatsItemStats,
     auto: DefaultGameStatsItemStats,
     triple: DefaultGameStatsItemStats,
@@ -108,8 +115,7 @@ impl UpgradeCosts {
  * Событие подключения к Socket.IO
  */
 
-pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, io: SocketIo) {
-    info!("Socket.IO connected: {:?} {:?}", client.ns(), client.id);
+pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, io: SocketIo, db_client: Arc<Collection<Document>>) {
     let uri_string = client.req_parts().uri.clone().to_string(); // Создаем строку из URI
     let query = uri_string.split_once('?').map_or("", |(_, q)| q); // Теперь `uri_string` живет достаточно долго
 
@@ -146,26 +152,46 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
     // удалить пароль из данных пользователя
     user.remove("password");
 
-    println!("id: {}, password: {}", id, password);
+    println!("connected");
 
     let user_info = Arc::new(Mutex::new(UserData { data: user.clone() }));
+
+    client.emit("data", user).ok();
+
     let user_info_for_msg = user_info.clone();
+    client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| {
+        let user_info_for_msg_clone = user_info_for_msg.clone();
+        let db_client_clone = db_client.clone();
 
-    client.emit("data", user);
+        tokio::spawn(async move {
+            println!("saveData");
+            let mut user_data_lock = user_info_for_msg_clone.lock().await; // Используйте .await здесь
 
-    client.on("msg", move |client: SocketRef, Data::<String>(msg)| {
-        let user_data_lock = user_info_for_msg.lock().unwrap();
-        info!("Received event: {:?}, from user: {:?}", msg, user_data_lock.data);
-        println!("msg");
+            let game_stats_doc = match to_document(&data) {
+                Ok(doc) => doc,
+                Err(e) => {
+                    eprintln!("Ошибка при сериализации данных игры: {:?}", e);
+                    client.emit("error", "Ошибка при сохранении данных").ok();
+                    return;
+                }
+            };
 
-        client.emit("message-back", doc! {"id": "1"}).ok();
-    });
+            user_data_lock.data.insert("gameStats", &game_stats_doc);
 
-    client.on("buy", move |client: SocketRef, Data::<BuyData>(data)| {
-        // info!("Received event: {:?}, from user: {:?}", msg, user);
+            println!("{:?}", data);
+
+            let _result = db_client_clone.update_one(
+                doc! {
+                "_id": user_data_lock.data.get_str("_id").unwrap()
+            },
+                doc! {
+                "$set": { "gameStats": game_stats_doc }
+            }, None,
+            ).await;
 
 
-        client.emit("message-back", doc! {"id": "2"}).ok();
+            client.emit("saveData", doc! {"id": "2"}).ok();
+        });
     });
 }
 

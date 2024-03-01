@@ -56,7 +56,7 @@ async fn main() {
     let cors = CorsLayer::new().allow_origin(AllowOrigin::any()); // Разрешение запросов со всех источников
 
     io.ns("/", move |_s: SocketRef| {
-        return io_on_connect(_s, shared_collection_clone, io_clone);
+        return io_on_connect(_s, shared_collection_clone, io_clone, shared_collection);
     });
 
     // Routing
