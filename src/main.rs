@@ -1,15 +1,12 @@
-use mongodb::{bson::Document, options::ClientOptions, Client, Collection};
+use mongodb::{bson::Document, options::ClientOptions, Client};
 use std::sync::Arc;
 use axum::handler::Handler;
 use axum::{Json, Router};
 use axum::routing::{post};
-use serde::{Deserialize, Serialize};
 use socketioxide::extract::SocketRef;
 use socketioxide::SocketIo;
 use tokio::net::TcpListener;
-use tower::ServiceBuilder;
 use tower_http::cors::{AllowOrigin, CorsLayer};
-use tracing_subscriber::fmt::layer;
 use crate::auth::auth::LoginRequest;
 use crate::socket::io::io_on_connect;
 

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use axum::{Extension, Json};
+use axum::{Json};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use mongodb::bson::{doc, Document};
@@ -38,9 +38,6 @@ pub async fn login(
             Json(create_error("Неправильный логин или пароль")),
         );
     }
-
-
-    println!("{:?}", user);
 
     // Отправка ответа
     return (
@@ -89,9 +86,7 @@ pub async fn register(
         );
     }
 
-    let result: mongodb::results::InsertOneResult = user_db::set_new_user(client, &body.id, &body.password).await;
-
-    println!("{:?}", result);
+    let _ = user_db::set_new_user(client, &body.password, &body.id).await;
 
     let duration = start.elapsed(); // Окончание замера времени
     println!("Время выполнения: {:?}", duration);

@@ -1,21 +1,31 @@
 use std::sync::{Arc};
 use crate::auth::sha256::hash_password;
 
-use axum;
 use lazy_static::lazy_static;
-use mongodb::{bson::{doc, Document}, options::ClientOptions, Client, Collection};
+use mongodb::{bson::{doc, Document}, Collection};
 use socketioxide::{extract::{SocketRef, Data}, SocketIo};
-use tower::ServiceBuilder;
-use tower_http::cors::CorsLayer;
-use tracing::{error, info};
-use tracing_subscriber::FmtSubscriber;
 use std::collections::HashMap;
-use std::ptr::null;
 use mongodb::bson::to_document;
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpListener;
+use socketioxide::socket::DisconnectReason;
 use tokio::sync::Mutex;
+use tokio::time::Instant;
 
+lazy_static! {
+    static ref USERS_ONLINE: Mutex<HashMap<String, UserDataLazyStatic>> = Mutex::new(HashMap::new());
+}
+
+struct UserDataLazyStatic {
+    balance: i64,
+    data: Document,
+    id: String,
+}
+
+#[derive(Serialize)]
+struct UserDataSimpled {
+    balance: i64,
+    id: String,
+}
 
 struct UserData {
     data: Document,
@@ -131,6 +141,14 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         return;
     }
 
+    if USERS_ONLINE.lock().await.contains_key(&id) {
+        println!("user already connected");
+        client.emit("error", "другое устройство уже вошло в аккаунт");
+        client.disconnect();
+        return;
+    }
+    println!("user already connected2");
+
     let result = shared_collection.find_one(doc! {"_id": id.clone(), "password": &hash_password(&password.clone())}, None).await;
 
     let mut user = match result.clone() {
@@ -156,15 +174,27 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     let user_info = Arc::new(Mutex::new(UserData { data: user.clone() }));
 
-    client.emit("data", user).ok();
+    client.emit("data", user.clone()).ok();
+
+    let user_info_lock = user_info.lock().await;
+
+    println!("{:?}", user_info_lock.data);
+
+    USERS_ONLINE.lock().await
+        .insert(id.clone(), UserDataLazyStatic {
+            balance: user_info_lock.data.get_document("gameStats").unwrap().get_i64("balance").unwrap(),
+            data: user_info_lock.data.get_document("gameStats").unwrap().clone(),
+            id: user_info_lock.data.get_str("_id").unwrap().to_string(),
+        });
 
     let user_info_for_msg = user_info.clone();
     client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| {
+        let _start: Instant = Instant::now();
+
         let user_info_for_msg_clone = user_info_for_msg.clone();
         let db_client_clone = db_client.clone();
 
         tokio::spawn(async move {
-            println!("saveData");
             let mut user_data_lock = user_info_for_msg_clone.lock().await; // Используйте .await здесь
 
             let game_stats_doc = match to_document(&data) {
@@ -178,8 +208,6 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
             user_data_lock.data.insert("gameStats", &game_stats_doc);
 
-            println!("{:?}", data);
-
             let _result = db_client_clone.update_one(
                 doc! {
                 "_id": user_data_lock.data.get_str("_id").unwrap()
@@ -190,8 +218,40 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             ).await;
 
 
-            client.emit("saveData", doc! {"id": "2"}).ok();
+            let _durration = _start.elapsed();
+            println!("Время выполнения: {:?}", _durration);
+
+            USERS_ONLINE.lock().await
+                .insert(user_data_lock.data.get_str("_id").unwrap().to_string(), UserDataLazyStatic {
+                    data: user_data_lock.data.get_document("gameStats").unwrap().clone(),
+                    balance: user_data_lock.data.get_document("gameStats").unwrap().get_i64("balance").unwrap(),
+                    id: user_data_lock.data.get_str("_id").unwrap().to_string(),
+                });
         });
+    });
+
+    client.on("getLeadeboard", move |client: SocketRef, data: Data<()>| async move {
+        println!("getLeadeboard");
+
+        let users_online = USERS_ONLINE.lock().await;
+        let mut users: Vec<UserDataSimpled> = users_online.values().map(|user| UserDataSimpled {
+            balance: user.balance.clone(),
+            id: user.id.clone(),
+        }).collect();
+
+        // Сортируем Vec<User> по balance
+        users.sort_by(|a, b| a.balance.cmp(&b.balance));
+
+        client.emit("leaderboard", users).ok();
+    });
+
+    let user_info_for_msg = user_info.clone();
+    client.on_disconnect(move |client: SocketRef, reason: DisconnectReason| async move {
+        println!("disconnect");
+        let user_info_for_msg_clone = user_info_for_msg.clone();
+
+        let id = user_info_for_msg_clone.lock().await.data.get_str("_id").unwrap().to_string();
+        USERS_ONLINE.lock().await.remove(&id);
     });
 }
 
