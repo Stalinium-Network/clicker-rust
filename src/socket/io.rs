@@ -2,7 +2,7 @@ use std::sync::{Arc};
 use crate::auth::sha256::hash_password;
 
 use lazy_static::lazy_static;
-use mongodb::{bson::{doc, Document}, Collection};
+use mongodb::{bson::{doc, Document}, bson, Collection};
 use socketioxide::{extract::{SocketRef, Data}, SocketIo};
 use std::collections::HashMap;
 use mongodb::bson::to_document;
@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use socketioxide::socket::DisconnectReason;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use crate::leaderboard::main::{get_leaderboard, LeaderBoardItem, update_leaderboard_user_pos};
 
 lazy_static! {
     static ref USERS_ONLINE: Mutex<HashMap<String, UserDataLazyStatic>> = Mutex::new(HashMap::new());
@@ -17,18 +18,19 @@ lazy_static! {
 
 struct UserDataLazyStatic {
     balance: i64,
-    data: Document,
     id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct UserDataSimpled {
     balance: i64,
     id: String,
 }
 
 struct UserData {
-    data: Document,
+    raw: Document,
+    data: DefaultGameStats,
+    _id: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -172,86 +174,106 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     println!("connected");
 
-    let user_info = Arc::new(Mutex::new(UserData { data: user.clone() }));
+    let user_obj: DefaultGameStats = bson::from_document(user.get_document("gameStats").unwrap().clone()).unwrap();
+    let user_info = Arc::new(Mutex::new(UserData { data: user_obj, _id: id.clone(), raw: user.clone() }));
 
     client.emit("data", user.clone()).ok();
 
     let user_info_lock = user_info.lock().await;
 
-    println!("{:?}", user_info_lock.data);
-
     USERS_ONLINE.lock().await
         .insert(id.clone(), UserDataLazyStatic {
-            balance: user_info_lock.data.get_document("gameStats").unwrap().get_i64("balance").unwrap(),
-            data: user_info_lock.data.get_document("gameStats").unwrap().clone(),
-            id: user_info_lock.data.get_str("_id").unwrap().to_string(),
+            balance: user_info_lock.data.balance.clone(),
+            id: user_info_lock._id.clone(),
         });
+
 
     let user_info_for_msg = user_info.clone();
-    client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| {
+    client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| async move {
+        println!("saveData");
         let _start: Instant = Instant::now();
 
-        let user_info_for_msg_clone = user_info_for_msg.clone();
-        let db_client_clone = db_client.clone();
+        println!("--");
+        let mut user_data_lock = user_info_for_msg.lock().await; // Используйте .await здесь
+        println!("--user_data_lock");
 
-        tokio::spawn(async move {
-            let mut user_data_lock = user_info_for_msg_clone.lock().await; // Используйте .await здесь
+        let game_stats_doc = match to_document(&data) {
+            Ok(doc) => doc,
+            Err(e) => {
+                eprintln!("Ошибка при сериализации данных игры: {:?}", e);
+                client.emit("error", "Ошибка при сохранении данных").ok();
+                return;
+            }
+        };
 
-            let game_stats_doc = match to_document(&data) {
-                Ok(doc) => doc,
-                Err(e) => {
-                    eprintln!("Ошибка при сериализации данных игры: {:?}", e);
-                    client.emit("error", "Ошибка при сохранении данных").ok();
-                    return;
-                }
-            };
+        user_data_lock.raw.insert("gameStats", game_stats_doc.clone());
 
-            user_data_lock.data.insert("gameStats", &game_stats_doc);
+        println!("update_leaderboard_user_pos()");
+        update_leaderboard_user_pos(LeaderBoardItem { id: user_data_lock._id.clone(), balance: user_data_lock.data.balance }).await;
+        println!("saveData -2");
 
-            let _result = db_client_clone.update_one(
-                doc! {
-                "_id": user_data_lock.data.get_str("_id").unwrap()
-            },
-                doc! {
-                "$set": { "gameStats": game_stats_doc }
-            }, None,
-            ).await;
+        USERS_ONLINE.lock().await
+            .insert(user_data_lock._id.clone(), UserDataLazyStatic {
+                balance: user_data_lock.data.balance.clone(),
+                id: user_data_lock._id.clone(),
+            });
 
-
-            let _durration = _start.elapsed();
-            println!("Время выполнения: {:?}", _durration);
-
-            USERS_ONLINE.lock().await
-                .insert(user_data_lock.data.get_str("_id").unwrap().to_string(), UserDataLazyStatic {
-                    data: user_data_lock.data.get_document("gameStats").unwrap().clone(),
-                    balance: user_data_lock.data.get_document("gameStats").unwrap().get_i64("balance").unwrap(),
-                    id: user_data_lock.data.get_str("_id").unwrap().to_string(),
-                });
-        });
+        let _durration = _start.elapsed();
+        println!("saveData: {:?}", _durration);
     });
 
-    client.on("getLeadeboard", move |client: SocketRef, data: Data<()>| async move {
-        println!("getLeadeboard");
+    client.on("getLeaderboard", move |client: SocketRef| async move {
+        println!(" --- --- --- --- getLeaderboard");
 
-        let users_online = USERS_ONLINE.lock().await;
-        let mut users: Vec<UserDataSimpled> = users_online.values().map(|user| UserDataSimpled {
-            balance: user.balance.clone(),
-            id: user.id.clone(),
-        }).collect();
+        let leaderboard = get_leaderboard().await;
 
-        // Сортируем Vec<User> по balance
-        users.sort_by(|a, b| a.balance.cmp(&b.balance));
-
-        client.emit("leaderboard", users).ok();
+        println!("{:?}", leaderboard);
+        client.emit("leaderboard", "".to_string()).ok();
     });
 
     let user_info_for_msg = user_info.clone();
     client.on_disconnect(move |client: SocketRef, reason: DisconnectReason| async move {
         println!("disconnect");
-        let user_info_for_msg_clone = user_info_for_msg.clone();
+        let _start: Instant = Instant::now();
 
-        let id = user_info_for_msg_clone.lock().await.data.get_str("_id").unwrap().to_string();
-        USERS_ONLINE.lock().await.remove(&id);
+        let binding = user_info_for_msg.clone();
+        let user_data_lock = binding.lock().await;
+        let db_client_clone = db_client.clone();
+
+        let data = user_data_lock.raw.clone();
+
+        let game_stats_doc = match to_document(&data) {
+            Ok(doc) => doc,
+            Err(e) => {
+                eprintln!("Ошибка при сериализации данных игры: {:?}", e);
+                client.emit("error", "Ошибка при сохранении данных").ok();
+                return;
+            }
+        };
+
+        let game_stats = match game_stats_doc.get_document("gameStats") {
+            Ok(doc) => doc,
+            Err(e) => {
+                eprintln!("Ошибка доступа к 'gameStats': {:?}", e);
+                return;
+            }
+        };
+
+        let _ = db_client_clone.update_one(
+            doc! {
+                "_id": user_data_lock._id.clone()
+            },
+            doc! {
+                "$set": { "gameStats": game_stats }
+            }, None,
+        ).await;
+
+        let id = user_data_lock._id.clone();
+        let mut users_online_lock = USERS_ONLINE.lock().await;
+        users_online_lock.remove(&id);
+
+        let _durration = _start.elapsed();
+        println!("disconnect handler: {:?}", _durration);
     });
 }
 

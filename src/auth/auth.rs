@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 use crate::auth::sha256::hash_password;
 use crate::database::user_db;
+use crate::leaderboard::main::{LeaderBoardItem, req_add_user2leaderboard};
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -89,6 +90,10 @@ pub async fn register(
     let _ = user_db::set_new_user(client, &body.password, &body.id).await;
 
     let duration = start.elapsed(); // Окончание замера времени
+
+
+    req_add_user2leaderboard(LeaderBoardItem { id: body.id.clone(), balance: 0 }).await;
+
     println!("Время выполнения: {:?}", duration);
 
     return (

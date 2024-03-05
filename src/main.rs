@@ -1,6 +1,5 @@
 use mongodb::{bson::Document, options::ClientOptions, Client};
 use std::sync::Arc;
-use axum::handler::Handler;
 use axum::{Json, Router};
 use axum::routing::{post};
 use socketioxide::extract::SocketRef;
@@ -13,6 +12,8 @@ use crate::socket::io::io_on_connect;
 mod auth;
 mod socket;
 mod database;
+
+mod leaderboard;
 
 
 #[tokio::main]
