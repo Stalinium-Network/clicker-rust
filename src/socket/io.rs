@@ -7,6 +7,7 @@ use socketioxide::{extract::{SocketRef, Data}, SocketIo};
 use std::collections::HashMap;
 use mongodb::bson::to_document;
 use serde::{Deserialize, Serialize};
+use serde_json::to_string;
 use socketioxide::socket::DisconnectReason;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
@@ -143,12 +144,17 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         return;
     }
 
-    if USERS_ONLINE.lock().await.contains_key(&id) {
+    let users_online_lock = USERS_ONLINE.lock().await;
+
+    if users_online_lock.contains_key(&id) {
         println!("user already connected");
         client.emit("error", "другое устройство уже вошло в аккаунт");
         client.disconnect();
         return;
     }
+
+    drop(users_online_lock);
+
     println!("user already connected2");
 
     let result = shared_collection.find_one(doc! {"_id": id.clone(), "password": &hash_password(&password.clone())}, None).await;
@@ -181,21 +187,24 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     let user_info_lock = user_info.lock().await;
 
-    USERS_ONLINE.lock().await
+    let mut users_online_lock = USERS_ONLINE.lock().await;
+
+    users_online_lock
         .insert(id.clone(), UserDataLazyStatic {
             balance: user_info_lock.data.balance.clone(),
             id: user_info_lock._id.clone(),
         });
 
+    drop(users_online_lock);
+    drop(user_info_lock);
+
 
     let user_info_for_msg = user_info.clone();
     client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| async move {
         println!("saveData");
-        let _start: Instant = Instant::now();
+        let mut user_data_lock = user_info_for_msg.lock().await;
 
-        println!("--");
-        let mut user_data_lock = user_info_for_msg.lock().await; // Используйте .await здесь
-        println!("--user_data_lock");
+        let _start: Instant = Instant::now();
 
         let game_stats_doc = match to_document(&data) {
             Ok(doc) => doc,
@@ -206,29 +215,35 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             }
         };
 
+        let new_balance = game_stats_doc.get_i64("balance").unwrap_or(0);
+
         user_data_lock.raw.insert("gameStats", game_stats_doc.clone());
+        user_data_lock.data.balance = new_balance;
 
-        println!("update_leaderboard_user_pos()");
-        update_leaderboard_user_pos(LeaderBoardItem { id: user_data_lock._id.clone(), balance: user_data_lock.data.balance }).await;
-        println!("saveData -2");
+        let _start2: Instant = Instant::now();
+        update_leaderboard_user_pos(LeaderBoardItem { id: user_data_lock._id.clone(), balance: new_balance }).await;
+        println!("update_leaderboard_user_pos: [{:?}]", _start2.elapsed());
+        println!("\n\n\n");
 
-        USERS_ONLINE.lock().await
-            .insert(user_data_lock._id.clone(), UserDataLazyStatic {
-                balance: user_data_lock.data.balance.clone(),
-                id: user_data_lock._id.clone(),
-            });
+        // let mut users_online_lock = USERS_ONLINE.lock().await;
+        //
+        // users_online_lock
+        //     .insert(user_data_lock._id.clone(), UserDataLazyStatic {
+        //         balance: user_data_lock.data.balance.clone(),
+        //         id: user_data_lock._id.clone(),
+        //     });
+
+        // drop(user_data_lock);
 
         let _durration = _start.elapsed();
         println!("saveData: {:?}", _durration);
     });
 
     client.on("getLeaderboard", move |client: SocketRef| async move {
-        println!(" --- --- --- --- getLeaderboard");
+        let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
+        let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
-        let leaderboard = get_leaderboard().await;
-
-        println!("{:?}", leaderboard);
-        client.emit("leaderboard", "".to_string()).ok();
+        client.emit("leaderboard", serialized_leaderboard).ok();
     });
 
     let user_info_for_msg = user_info.clone();
@@ -236,8 +251,8 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         println!("disconnect");
         let _start: Instant = Instant::now();
 
-        let binding = user_info_for_msg.clone();
-        let user_data_lock = binding.lock().await;
+        // let binding = user_info_for_msg.clone();
+        let user_data_lock = user_info_for_msg.lock().await;
         let db_client_clone = db_client.clone();
 
         let data = user_data_lock.raw.clone();

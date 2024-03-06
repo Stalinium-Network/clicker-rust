@@ -12,8 +12,8 @@ use crate::socket::io::io_on_connect;
 mod auth;
 mod socket;
 mod database;
-
 mod leaderboard;
+mod internal;
 
 
 #[tokio::main]
@@ -22,10 +22,11 @@ async fn main() {
     let client: Client = Client::with_options(client_options).unwrap();
     let db: mongodb::Database = client.database("myApp");
     let collection: mongodb::Collection<Document> = db.collection::<Document>("users");
-    let shared_collection: Arc<mongodb::Collection<Document>> = Arc::new(collection);
+    let shared_collection: Arc<mongodb::Collection<Document>> = Arc::new(collection.clone());
 
     let shared_collection_clone = Arc::clone(&shared_collection);
 
+    internal::indexing::main(&collection).await;
 
     let login_route = {
         let shared_collection = Arc::clone(&shared_collection);
