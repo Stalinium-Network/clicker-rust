@@ -1,6 +1,7 @@
 use std::sync::{Arc};
 use crate::auth::sha256::hash_password;
 
+use dashmap::DashMap;
 use lazy_static::lazy_static;
 use mongodb::{bson::{doc, Document}, bson, Collection};
 use socketioxide::{extract::{SocketRef, Data}, SocketIo};
@@ -12,9 +13,10 @@ use socketioxide::socket::DisconnectReason;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use crate::leaderboard::main::{get_leaderboard, LeaderBoardItem, update_leaderboard_user_pos};
+use crate::internal::logger;
 
 lazy_static! {
-    static ref USERS_ONLINE: Mutex<HashMap<String, UserDataLazyStatic>> = Mutex::new(HashMap::new());
+    static ref USERS_ONLINE: DashMap<String, UserDataLazyStatic> = DashMap::new();
 }
 
 struct UserDataLazyStatic {
@@ -128,7 +130,8 @@ impl UpgradeCosts {
  * Событие подключения к Socket.IO
  */
 
-pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, io: SocketIo, db_client: Arc<Collection<Document>>) {
+pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, _io: SocketIo, db_client: Arc<Collection<Document>>) {
+    logger::time("connection handler");
     let uri_string = client.req_parts().uri.clone().to_string(); // Создаем строку из URI
     let query = uri_string.split_once('?').map_or("", |(_, q)| q); // Теперь `uri_string` живет достаточно долго
 
@@ -144,16 +147,13 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         return;
     }
 
-    let users_online_lock = USERS_ONLINE.lock().await;
-
-    if users_online_lock.contains_key(&id) {
+    if USERS_ONLINE.contains_key(&id) {
         println!("user already connected");
         client.emit("error", "другое устройство уже вошло в аккаунт");
         client.disconnect();
         return;
     }
 
-    drop(users_online_lock);
 
     println!("user already connected2");
 
@@ -187,24 +187,20 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     let user_info_lock = user_info.lock().await;
 
-    let mut users_online_lock = USERS_ONLINE.lock().await;
-
-    users_online_lock
+    USERS_ONLINE
         .insert(id.clone(), UserDataLazyStatic {
             balance: user_info_lock.data.balance.clone(),
             id: user_info_lock._id.clone(),
         });
 
-    drop(users_online_lock);
-    drop(user_info_lock);
-
-
     let user_info_for_msg = user_info.clone();
-    client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| async move {
-        println!("saveData");
-        let mut user_data_lock = user_info_for_msg.lock().await;
 
-        let _start: Instant = Instant::now();
+    logger::time_end("connection handler");
+
+    client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| async move {
+        logger::time("saveData");
+        logger::time("start");
+        let mut user_data_lock = user_info_for_msg.lock().await;
 
         let game_stats_doc = match to_document(&data) {
             Ok(doc) => doc,
@@ -216,27 +212,35 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         };
 
         let new_balance = game_stats_doc.get_i64("balance").unwrap_or(0);
+        logger::time_end("start");
 
+        logger::time("update_leaderboard_user_pos");
+        update_leaderboard_user_pos(
+            LeaderBoardItem { id: user_data_lock._id.clone(), balance: new_balance },
+            &user_data_lock.data.balance,
+            &new_balance,
+        ).await;
+        logger::time_end("update_leaderboard_user_pos");
+
+
+        logger::time("update userDataLock");
         user_data_lock.raw.insert("gameStats", game_stats_doc.clone());
         user_data_lock.data.balance = new_balance;
+        logger::time_end("update userDataLock");
 
-        let _start2: Instant = Instant::now();
-        update_leaderboard_user_pos(LeaderBoardItem { id: user_data_lock._id.clone(), balance: new_balance }).await;
-        println!("update_leaderboard_user_pos: [{:?}]", _start2.elapsed());
-        println!("\n\n\n");
 
-        // let mut users_online_lock = USERS_ONLINE.lock().await;
-        //
-        // users_online_lock
-        //     .insert(user_data_lock._id.clone(), UserDataLazyStatic {
-        //         balance: user_data_lock.data.balance.clone(),
-        //         id: user_data_lock._id.clone(),
-        //     });
+        logger::time("USERS_ONLINE");
 
-        // drop(user_data_lock);
+        USERS_ONLINE
+            .insert(user_data_lock._id.clone(), UserDataLazyStatic {
+                balance: user_data_lock.data.balance.clone(),
+                id: user_data_lock._id.clone(),
+            });
+        logger::time_end("USERS_ONLINE");
 
-        let _durration = _start.elapsed();
-        println!("saveData: {:?}", _durration);
+
+        logger::time_end("saveData");
+        println!("\n");
     });
 
     client.on("getLeaderboard", move |client: SocketRef| async move {
@@ -247,7 +251,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
     });
 
     let user_info_for_msg = user_info.clone();
-    client.on_disconnect(move |client: SocketRef, reason: DisconnectReason| async move {
+    client.on_disconnect(move |client: SocketRef, _reason: DisconnectReason| async move {
         println!("disconnect");
         let _start: Instant = Instant::now();
 
@@ -284,8 +288,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         ).await;
 
         let id = user_data_lock._id.clone();
-        let mut users_online_lock = USERS_ONLINE.lock().await;
-        users_online_lock.remove(&id);
+        USERS_ONLINE.remove(&id);
 
         let _durration = _start.elapsed();
         println!("disconnect handler: {:?}", _durration);

@@ -21,3 +21,4 @@ axum = "0.7"
 tower-http = {version = "0.5", features = ["cors"]}
 tower = "0.4"
 futures = "0.3.30"
+dashmap = "5.5.3"

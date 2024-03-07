@@ -1,14 +1,14 @@
-use std::collections::HashMap;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, MutexGuard};
+use dashmap::DashMap;
 
 lazy_static! {
     pub static ref LEADERBOARD: Mutex<Vec<LeaderBoardItem>> = Mutex::new(Vec::new());
 }
 
 lazy_static! {
-    pub static ref LEADERBOARD_MAP: Mutex<HashMap<String, usize>> = Mutex::new(HashMap::new());
+    pub static ref LEADERBOARD_MAP: DashMap<String, usize> = DashMap::new();
 }
 
 pub const MAX_ARR_LEN: usize = 10;
@@ -38,11 +38,13 @@ pub async fn req_add_user2leaderboard(user_data: LeaderBoardItem) {
     }
 }
 
-pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem) {
-    println!(" --  update_leaderboard_user_pos -1");
+pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance: &i64, new_balance: &i64) {
+    if old_balance == new_balance {
+        println!("обновление не пребуется (same balance)");
+        return;
+    }
 
     let mut leaderboard_lock = LEADERBOARD.lock().await;
-    let mut leaderboard_map_lock = LEADERBOARD_MAP.lock().await;
     let last_user = leaderboard_lock[leaderboard_lock.len() - 1].clone();
 
     let user_balance = user_data.balance.clone();
@@ -50,14 +52,24 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem) {
     if leaderboard_lock.len() < MAX_ARR_LEN {
         println!(" --  в доске есть незаполненое место");
         // если в доске есть незаполненое место
+        let user_pos_in_leaderboard = LEADERBOARD_MAP.get(&user_data.id);
 
         if last_user.balance > user_balance {
             // добавить в конец
+            /*
+                TODO проверить что пользователь уже в списке
+            */
+            println!("добавить в конец");
+
+            if let Some(user_pos) = user_pos_in_leaderboard {
+                leaderboard_lock.remove(*user_pos);
+            }
+
+            LEADERBOARD_MAP.insert(user_data.id.clone(), leaderboard_lock.len());
             leaderboard_lock.push(user_data.clone());
-            leaderboard_map_lock.insert(user_data.id.clone(), leaderboard_lock.len());
+            return;
         }
 
-        let mut user_pos_in_leaderboard = leaderboard_map_lock.get(&user_data.id);
         let new_pos = find_user_pos(&user_balance, &leaderboard_lock).await;
 
         if let Some(pos) = user_pos_in_leaderboard {
@@ -65,11 +77,23 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem) {
             println!(" --  пользователь уже в списке");
 
             if *pos == new_pos {
-                let old_balance = leaderboard_lock[new_pos].balance;
                 leaderboard_lock[new_pos].balance = user_balance;
                 println!(" --  обновлять позицию не требуется, old_balance({:?}), new({:?})", old_balance, user_balance);
-                return;
+            } else {
+                println!(" --  обновление позиции");
+                // Удаляем старую запись пользователя из вектора
+                leaderboard_lock.remove(*pos);
+                println!(" --  обновление позиции (1)");
+
+                // Вставляем пользователя на новую позицию
+                leaderboard_lock.insert(new_pos, user_data.clone());
+                println!(" --  обновление позиции (2)");
+
+                // Обновляем позицию пользователя в DashMap
+                LEADERBOARD_MAP.insert(user_data.id.clone(), new_pos);
+                println!(" --  обновление позиции (3)");
             }
+            return;
         } else {
             // пользователь еще не в списке
             println!(" --  пользователь еще не в списке");
@@ -77,7 +101,7 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem) {
 
         // обновить инфу
         leaderboard_lock.insert(new_pos, user_data.clone());
-        leaderboard_map_lock.insert(user_data.id.clone(), new_pos);
+        LEADERBOARD_MAP.insert(user_data.id.clone(), new_pos);
 
         return;
     }
@@ -90,24 +114,27 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem) {
     }
 
 
-    let user_in_leaderboard = leaderboard_map_lock.get_mut(&user_data.id);
-
     let new_pos = find_user_pos(&user_balance, &leaderboard_lock).await;
 
     // если пользователь в leaderboard
-    if user_in_leaderboard.is_some() {
-        let curr_pos = user_in_leaderboard.unwrap();
-        println!(" --  пользователь в leaderboard, curr_pos = {:?}, new pos = {:?}", curr_pos, new_pos);
+    if let Some(pos_ref) = LEADERBOARD_MAP.get(&user_data.id) {
+        println!(" --  пользователь в leaderboard, curr_pos = {:?}, new pos = {:?}", *pos_ref, new_pos);
 
-        if *curr_pos == new_pos {
+
+        if *pos_ref == new_pos {
             // обновлять позицию не требуется
             println!(" --  обновлять позицию не требуется");
             return;
         }
 
-        // обновляем позицию
-        leaderboard_lock.remove(*curr_pos);
+        // Удаляем старую запись пользователя из вектора
+        leaderboard_lock.remove(*pos_ref);
+
+        // Вставляем пользователя на новую позицию
         leaderboard_lock.insert(new_pos, user_data.clone());
+
+        // Обновляем позицию пользователя в DashMap
+        LEADERBOARD_MAP.insert(user_data.id.clone(), new_pos);
     } else {
         // если пользователь еше не в списке
         println!(" --  пользователь еше не в списке");
@@ -115,11 +142,11 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem) {
 
         // убираем последнего пользователя
         leaderboard_lock.pop();
-        leaderboard_map_lock.remove(&last_user.id);
+        LEADERBOARD_MAP.remove(&last_user.id);
     }
 
     // обновляем инфу о позиции пользователя в map
-    *leaderboard_map_lock.get_mut(&user_data.id).unwrap() = new_pos;
+    LEADERBOARD_MAP.insert(user_data.id, new_pos);
     return;
 }
 

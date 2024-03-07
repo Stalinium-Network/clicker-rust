@@ -17,7 +17,6 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
     let mut cursor = collection.find(None, find_options).await?;
 
     let mut leaderboard_lock = LEADERBOARD.lock().await;
-    let mut leaderboard_map_lock = LEADERBOARD_MAP.lock().await;
 
     let mut i: usize = 0;
 
@@ -28,7 +27,7 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
                     if let Ok(game_stats) = doc.get_document("gameStats") {
                         if let Ok(balance) = game_stats.get_i64("balance") {
                             leaderboard_lock.push(LeaderBoardItem { id: id.to_string(), balance });
-                            leaderboard_map_lock.insert(id.to_string(), i);
+                            LEADERBOARD_MAP.insert(id.to_string(), i);
                             i += 1;
                         } else {
                             eprintln!("Ошибка при получении balance");
