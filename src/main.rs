@@ -2,11 +2,15 @@ use mongodb::{bson::Document, options::ClientOptions, Client};
 use std::sync::Arc;
 use axum::{Json, Router};
 use axum::routing::{post};
+use serde_json::to_string;
 use socketioxide::extract::SocketRef;
 use socketioxide::SocketIo;
 use tokio::net::TcpListener;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use crate::auth::auth::LoginRequest;
+use crate::internal::logger;
+use crate::internal::set_interval::set_interval;
+use crate::leaderboard::main::get_leaderboard;
 use crate::socket::io::io_on_connect;
 
 mod auth;
@@ -60,6 +64,7 @@ async fn main() {
         return io_on_connect(_s, shared_collection_clone, io_clone, shared_collection);
     });
 
+
     // Routing
     let app = Router::new()
         .route("/login", post(login_route))
@@ -70,7 +75,23 @@ async fn main() {
 
     let listener = TcpListener::bind("127.0.0.1:3001").await.unwrap();
 
-    let _ = axum::serve(listener, app.into_make_service())
-        .await;
+    let _ = tokio::spawn(async move {
+        let _ = axum::serve(listener, app.into_make_service())
+            .await;
+    });
+
+
+    set_interval(|| {
+        tokio::spawn(async {
+            logger::time("getLeaderboard");
+
+            let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
+            let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
+
+            io.emit("leaderboard", serialized_leaderboard).ok();
+
+            logger::time_end("getLeaderboard");
+        });
+    }, 2000);
 }
 

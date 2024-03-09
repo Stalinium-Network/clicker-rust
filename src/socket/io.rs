@@ -152,9 +152,6 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         return;
     }
 
-
-    println!("user already connected2");
-
     let result = shared_collection.find_one(doc! {"_id": id.clone(), "password": &hash_password(&password.clone())}, None).await;
 
     let mut user = match result.clone() {
@@ -239,15 +236,6 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
         logger::time_end("saveData");
         println!("\n");
-    });
-
-    client.on("getLeaderboard", move |client: SocketRef| async move {
-        logger::time("getLeaderboard");
-        let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
-        let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
-
-        client.emit("leaderboard", serialized_leaderboard).ok();
-        logger::time_end("getLeaderboard");
     });
 
     let user_info_for_msg = user_info.clone();

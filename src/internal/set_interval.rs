@@ -1,7 +1,7 @@
 use std::thread;
 use std::time::Duration;
 
-pub async fn set_interval(func: fn(), ms: i32) -> () {
+pub fn set_interval(func: fn(), ms: u64) -> () {
     let interval = Duration::from_millis(ms);
 
     let handle = thread::spawn(move || {
