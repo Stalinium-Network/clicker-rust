@@ -1,6 +1,5 @@
 use std::sync::{Arc};
 use crate::auth::sha256::hash_password;
-
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use mongodb::{bson::{doc, Document}, bson, Collection};
@@ -36,11 +35,6 @@ struct UserData {
     _id: String,
 }
 
-#[derive(Deserialize, Debug)]
-struct BuyData {
-    action: String,
-}
-
 #[derive(Deserialize, Serialize, Debug)]
 struct DefaultGameStatsItemStats {
     cost: i64,
@@ -56,11 +50,13 @@ struct DefaultGameStatsSpeed {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+#[allow(non_snake_case)]
 struct DefaultGameStatsReset {
     minCost: i64,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+#[allow(non_snake_case)]
 struct DefaultGameStatsOtherUpgrades {
     higherHackAmount: bool,
     betterFirewall: bool,
@@ -69,6 +65,7 @@ struct DefaultGameStatsOtherUpgrades {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+#[allow(non_snake_case)]
 struct DefaultGameStats {
     balance: i64,
     mpc: DefaultGameStatsItemStats,
@@ -82,6 +79,7 @@ struct DefaultGameStats {
 
 
 // строим структуру для хранения цен и статистики
+/*
 struct BasePrices {
     auto: u32,
     mpc: u32,
@@ -125,7 +123,7 @@ impl UpgradeCosts {
     const COVERT_HACKS: u32 = 1000000;
     const DOUBLE_HACKS: u32 = 10000000;
 }
-
+*/
 /*
  * Событие подключения к Socket.IO
  */
@@ -142,15 +140,15 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
     let password = params.get("password").cloned().unwrap_or_else(|| "".to_string());
 
     if id.is_empty() || password.is_empty() {
-        client.emit("error", "401");
-        client.disconnect();
+        let _ = client.emit("error", "401");
+        let _ = client.disconnect();
         return;
     }
 
     if USERS_ONLINE.contains_key(&id) {
         println!("user already connected");
-        client.emit("error", "другое устройство уже вошло в аккаунт");
-        client.disconnect();
+        let _ = client.emit("error", "другое устройство уже вошло в аккаунт");
+        let _ = client.disconnect();
         return;
     }
 
@@ -164,13 +162,13 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         Ok(None) => {
             // Пользователь не найден
             println!("ok2 {:?}", result);
-            client.emit("error", "401");
-            client.disconnect();
+            let _ = client.emit("error", "401");
+            let _ = client.disconnect();
             return;
         }
         Err(_) => {
-            client.emit("error", "401");
-            client.disconnect();
+            let _ = client.emit("error", "401");
+            let _ = client.disconnect();
             return;
         }
     };
@@ -244,10 +242,12 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
     });
 
     client.on("getLeaderboard", move |client: SocketRef| async move {
+        logger::time("getLeaderboard");
         let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
         let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
         client.emit("leaderboard", serialized_leaderboard).ok();
+        logger::time_end("getLeaderboard");
     });
 
     let user_info_for_msg = user_info.clone();

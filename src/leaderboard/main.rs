@@ -19,10 +19,6 @@ pub struct LeaderBoardItem {
     pub balance: i64,
 }
 
-struct BinarySearchReturn {
-    guess: usize,
-}
-
 pub async fn get_leaderboard() -> Vec<LeaderBoardItem> {
     let leaderboard_lock = LEADERBOARD.lock().await;
     return leaderboard_lock.clone();
@@ -54,12 +50,21 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance
         // если в доске есть незаполненое место
         let user_pos_in_leaderboard = LEADERBOARD_MAP.get(&user_data.id);
 
+
         if last_user.balance > user_balance {
             // добавить в конец
             /*
                 TODO проверить что пользователь уже в списке
             */
-            println!("добавить в конец");
+
+            if last_user.id == user_data.id {
+                // обновление не требуется, пользователь и так в конце списка
+                println!(" --  обновление не требуется, пользователь и так в конце списка");
+                leaderboard_lock.last_mut().unwrap().balance = user_balance;
+                return;
+            }
+
+            println!("добавить в конец, last user balance ({}) -- user balance ({})", last_user.balance, user_balance);
 
             if let Some(user_pos) = user_pos_in_leaderboard {
                 leaderboard_lock.remove(*user_pos);
@@ -79,27 +84,41 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance
             if *pos == new_pos {
                 leaderboard_lock[new_pos].balance = user_balance;
                 println!(" --  обновлять позицию не требуется, old_balance({:?}), new({:?})", old_balance, user_balance);
+                return;
             } else {
-                println!(" --  обновление позиции");
                 // Удаляем старую запись пользователя из вектора
-                leaderboard_lock.remove(*pos);
-                println!(" --  обновление позиции (1)");
+                if old_balance > new_balance && (new_pos - *pos) == 1 {
+                    // если баланс уменьшился и разница в новой позиции равна 1, значит позиция не ихменилась (особенность binary search)
+                    leaderboard_lock[new_pos].balance = user_balance;
+                    return;
+                } else {
+                    println!(" -- [debug] | обновление позиции ( *pos ({:?}), new_pos ({:?}) )", *pos, new_pos);
 
-                // Вставляем пользователя на новую позицию
-                leaderboard_lock.insert(new_pos, user_data.clone());
-                println!(" --  обновление позиции (2)");
+                    {
+                        let more_or_less = if old_balance < new_balance { '<' } else { '>' };
+                        println!(" -- [debug] | old_b {:?} new_b ({:?} - {:?})", more_or_less, old_balance, new_balance);
 
-                // Обновляем позицию пользователя в DashMap
-                LEADERBOARD_MAP.insert(user_data.id.clone(), new_pos);
-                println!(" --  обновление позиции (3)");
+                        let u2rm = leaderboard_lock[new_pos].clone();
+                        println!("  ==       u2rm [> {:?}", u2rm);
+
+                        let u_on_old_pos = leaderboard_lock[*pos].clone();
+                        println!("  == u_old_pos  [> {:?}", u_on_old_pos);
+
+                        println!("  == u_data     [> {:?}", user_data);
+                    }
+
+                    leaderboard_lock.remove(*pos);
+                }
             }
-            return;
         } else {
             // пользователь еще не в списке
-            println!(" --  пользователь еще не в списке");
+            println!(" --  [error] пользователь еще не в списке");
+            print!("{:?}", user_pos_in_leaderboard);
         }
 
         // обновить инфу
+        println!(" --  обновить инфу");
+
         leaderboard_lock.insert(new_pos, user_data.clone());
         LEADERBOARD_MAP.insert(user_data.id.clone(), new_pos);
 

@@ -18,6 +18,8 @@ mod internal;
 
 #[tokio::main]
 async fn main() {
+    println!(" [info] Start server");
+
     let client_options: ClientOptions = ClientOptions::parse("mongodb://localhost:27017").await.unwrap();
     let client: Client = Client::with_options(client_options).unwrap();
     let db: mongodb::Database = client.database("myApp");
@@ -26,7 +28,7 @@ async fn main() {
 
     let shared_collection_clone = Arc::clone(&shared_collection);
 
-    internal::indexing::main(&collection).await;
+    let _ = internal::indexing::main(&collection).await;
 
     let login_route = {
         let shared_collection = Arc::clone(&shared_collection);
@@ -68,7 +70,7 @@ async fn main() {
 
     let listener = TcpListener::bind("127.0.0.1:3001").await.unwrap();
 
-    axum::serve(listener, app.into_make_service())
+    let _ = axum::serve(listener, app.into_make_service())
         .await;
 }
 

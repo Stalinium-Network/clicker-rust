@@ -2,23 +2,28 @@ use mongodb::bson::{doc, Document};
 use mongodb::{Collection, IndexModel};
 use mongodb::options::FindOptions;
 use futures::stream::StreamExt;
+use crate::internal::logger;
 use crate::leaderboard::main::{LEADERBOARD, LEADERBOARD_MAP, LeaderBoardItem, MAX_ARR_LEN};
 
 pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<()> {
+    logger::time("indexing leaderboard");
     let index_model = IndexModel::builder()
         .keys(doc! {"gameStats.balance": -1})
         .build();
 
-    let index_name = collection.create_index(index_model, None).await;
+    let _ = collection.create_index(index_model, None).await;
 
     let sort = doc! {"gameStats.balance": -1};
     let find_options = FindOptions::builder().sort(sort).limit(MAX_ARR_LEN as i64).build();
 
     let mut cursor = collection.find(None, find_options).await?;
 
-    let mut leaderboard_lock = LEADERBOARD.lock().await;
-
     let mut i: usize = 0;
+
+    let mut leaderboard_lock = LEADERBOARD.lock().await;
+    leaderboard_lock.clear();
+    LEADERBOARD_MAP.clear();
+
 
     while let Some(result) = cursor.next().await {
         match result {
@@ -43,9 +48,6 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
         }
     }
 
-    println!("leaderboard_lock: {:?}", leaderboard_lock);
-
-    println!(" - indexed {:?}\n\n", index_name);
-
+    logger::time_end("indexing leaderboard");
     Ok(())
 }

@@ -17,6 +17,6 @@ pub fn time_end(id: &str) {
     if let Some(target) = MAP.get(id) {
         println!("[{:?}] {:?}", target.elapsed(), id)
     } else {
-        println!("nf-2")
+        println!(" logger err nf-2")
     }
 }
