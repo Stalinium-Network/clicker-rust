@@ -8,7 +8,6 @@ use socketioxide::SocketIo;
 use tokio::net::TcpListener;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use crate::auth::auth::LoginRequest;
-use crate::internal::logger;
 use crate::internal::set_interval::set_interval;
 use crate::leaderboard::main::get_leaderboard;
 use crate::socket::io::io_on_connect;
@@ -60,10 +59,21 @@ async fn main() {
 
     let cors = CorsLayer::new().allow_origin(AllowOrigin::any()); // Разрешение запросов со всех источников
 
+    io.ns("/leaderboard", move |_s: SocketRef| {
+        async fn handler(_s: SocketRef) {
+            let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
+            let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
+
+            println!("sended");
+            _s.emit("leaderboard", serialized_leaderboard).ok();
+        }
+
+        return handler(_s);
+    });
+
     io.ns("/", move |_s: SocketRef| {
         return io_on_connect(_s, shared_collection_clone, io_clone, shared_collection);
     });
-
 
     // Routing
     let app = Router::new()
@@ -81,17 +91,20 @@ async fn main() {
     });
 
 
-    set_interval(|| {
-        tokio::spawn(async {
-            logger::time("getLeaderboard");
+    let io_clone = io.clone();
+    set_interval(move || {
+        let io_clone = io_clone.clone();
+
+        tokio::spawn(async move {
+            // logger::time("send leaderboard");
 
             let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
             let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
-            io.emit("leaderboard", serialized_leaderboard).ok();
+            io_clone.emit("leaderboard", serialized_leaderboard).ok();
 
-            logger::time_end("getLeaderboard");
+            // logger::time_end("send leaderboard");
         });
-    }, 2000);
+    }, 1_500).await;
 }
 

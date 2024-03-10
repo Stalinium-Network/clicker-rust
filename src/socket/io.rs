@@ -130,6 +130,9 @@ impl UpgradeCosts {
 
 pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<Document>>, _io: SocketIo, db_client: Arc<Collection<Document>>) {
     logger::time("connection handler");
+
+    send_leaderboard(&client).await;
+
     let uri_string = client.req_parts().uri.clone().to_string(); // Создаем строку из URI
     let query = uri_string.split_once('?').map_or("", |(_, q)| q); // Теперь `uri_string` живет достаточно долго
 
@@ -206,7 +209,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             }
         };
 
-        let new_balance = game_stats_doc.get_i64("balance").unwrap_or(0);
+        let new_balance = data.balance;
         logger::time_end("start");
 
         logger::time("update_leaderboard_user_pos");
@@ -288,4 +291,12 @@ fn parse_query_string(query: &str) -> HashMap<String, String> {
         .map(|part| part.split_once('=').unwrap_or((part, "")))
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect()
+}
+
+
+async fn send_leaderboard(s: &SocketRef) {
+    let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
+    let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
+
+    s.emit("leaderboard", serialized_leaderboard).ok();
 }

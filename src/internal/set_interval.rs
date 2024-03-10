@@ -1,16 +1,14 @@
-use std::thread;
 use std::time::Duration;
+use tokio::time;
 
-pub fn set_interval(func: fn(), ms: u64) -> () {
-    let interval = Duration::from_millis(ms);
+pub async fn set_interval<F>(mut func: F, ms: u64)
+    where
+        F:  FnMut() + Send + 'static,
+{
+    let mut interval = time::interval(Duration::from_millis(ms));
 
-    let handle = thread::spawn(move || {
-        loop {
-            thread::sleep(interval);
-
-            func();
-        }
-    });
-
-    handle.join().unwrap();
+    loop {
+        interval.tick().await;
+        func()
+    }
 }
