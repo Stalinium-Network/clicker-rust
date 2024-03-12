@@ -11,6 +11,7 @@ use serde_json::to_string;
 use socketioxide::socket::DisconnectReason;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use crate::chat::db::add_msg;
 use crate::leaderboard::main::{get_leaderboard, LeaderBoardItem, update_leaderboard_user_pos};
 use crate::internal::logger;
 
@@ -19,20 +20,21 @@ lazy_static! {
 }
 
 struct UserDataLazyStatic {
-    balance: i64,
+    balance: u128,
     id: String,
 }
 
 #[derive(Serialize, Debug)]
 struct UserDataSimpled {
-    balance: i64,
+    balance: u128,
     id: String,
 }
 
 struct UserData {
     raw: Document,
-    data: DefaultGameStats,
+    // data: DefaultGameStats,
     _id: String,
+    balance: u128,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -67,7 +69,7 @@ struct DefaultGameStatsOtherUpgrades {
 #[derive(Deserialize, Serialize, Debug)]
 #[allow(non_snake_case)]
 struct DefaultGameStats {
-    balance: i64,
+    balance: String,
     mpc: DefaultGameStatsItemStats,
     auto: DefaultGameStatsItemStats,
     triple: DefaultGameStatsItemStats,
@@ -77,6 +79,12 @@ struct DefaultGameStats {
     otherUpgrades: DefaultGameStatsOtherUpgrades,
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+#[allow(non_snake_case)]
+struct UserDataObj {
+    _id: String,
+    gameStats: DefaultGameStats,
+}
 
 // строим структуру для хранения цен и статистики
 /*
@@ -176,10 +184,15 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
     // удалить пароль из данных пользователя
     user.remove("password");
 
+
     println!("connected");
 
     let user_obj: DefaultGameStats = bson::from_document(user.get_document("gameStats").unwrap().clone()).unwrap();
-    let user_info = Arc::new(Mutex::new(UserData { data: user_obj, _id: id.clone(), raw: user.clone() }));
+    let user_info = Arc::new(Mutex::new(UserData {
+        balance: user_obj.balance.parse::<u128>().unwrap_or(0),
+        _id: id.clone(),
+        raw: user.clone(),
+    }));
 
     client.emit("data", user.clone()).ok();
 
@@ -187,7 +200,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     USERS_ONLINE
         .insert(id.clone(), UserDataLazyStatic {
-            balance: user_info_lock.data.balance.clone(),
+            balance: user_info_lock.balance.clone(),
             id: user_info_lock._id.clone(),
         });
 
@@ -197,7 +210,6 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| async move {
         logger::time("saveData");
-        logger::time("start");
         let mut user_data_lock = user_info_for_msg.lock().await;
 
         let game_stats_doc = match to_document(&data) {
@@ -209,36 +221,44 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             }
         };
 
-        let new_balance = data.balance;
-        logger::time_end("start");
+        println!("balance: {:?}", data.balance);
+        let new_balance: u128 = data.balance.parse::<u128>().unwrap();
 
-        logger::time("update_leaderboard_user_pos");
+        logger::time("update_leaderboard_user_pos()");
         update_leaderboard_user_pos(
             LeaderBoardItem { id: user_data_lock._id.clone(), balance: new_balance },
-            &user_data_lock.data.balance,
+            &user_data_lock.balance,
             &new_balance,
         ).await;
-        logger::time_end("update_leaderboard_user_pos");
+        logger::time_end("update_leaderboard_user_pos()");
 
 
-        logger::time("update userDataLock");
         user_data_lock.raw.insert("gameStats", game_stats_doc.clone());
-        user_data_lock.data.balance = new_balance;
-        logger::time_end("update userDataLock");
-
-
-        logger::time("USERS_ONLINE");
+        user_data_lock.balance = new_balance;
 
         USERS_ONLINE
             .insert(user_data_lock._id.clone(), UserDataLazyStatic {
-                balance: user_data_lock.data.balance.clone(),
+                balance: user_data_lock.balance.clone(),
                 id: user_data_lock._id.clone(),
             });
-        logger::time_end("USERS_ONLINE");
 
 
         logger::time_end("saveData");
         println!("\n");
+    });
+
+    let user_info_clone = user_info.clone();
+    client.on("message", move |client: SocketRef, Data::<String>(mut msg)| async move {
+        let user_info_lock = user_info_clone.lock().await;
+        msg = msg.trim().to_string();
+        println!("{:?}", msg);
+
+        if msg == "" {
+            return;
+        }
+
+        let msg_obj = add_msg(user_info_lock._id.clone(), msg).await;
+        _io.emit("message", msg_obj).ok();
     });
 
     let user_info_for_msg = user_info.clone();
@@ -246,7 +266,6 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         println!("disconnect");
         let _start: Instant = Instant::now();
 
-        // let binding = user_info_for_msg.clone();
         let user_data_lock = user_info_for_msg.lock().await;
         let db_client_clone = db_client.clone();
 
@@ -271,11 +290,11 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
         let _ = db_client_clone.update_one(
             doc! {
-                "_id": user_data_lock._id.clone()
-            },
+"_id": user_data_lock._id.clone()
+},
             doc! {
-                "$set": { "gameStats": game_stats }
-            }, None,
+"$set": { "gameStats": game_stats }
+}, None,
         ).await;
 
         let id = user_data_lock._id.clone();
@@ -295,7 +314,7 @@ fn parse_query_string(query: &str) -> HashMap<String, String> {
 
 
 async fn send_leaderboard(s: &SocketRef) {
-    let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
+    let leaderboard: Vec<LeaderBoardItem> = get_leaderboard(7).await; // Получаем leaderboard как Vec<LeaderBoardItem>
     let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
     s.emit("leaderboard", serialized_leaderboard).ok();

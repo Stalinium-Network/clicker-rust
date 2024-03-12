@@ -87,7 +87,7 @@ pub async fn register(
         );
     }
 
-    let _ = user_db::set_new_user(client, &body.password, &body.id).await;
+    let _ = user_db::set_new_user(&client, &body.password, &body.id).await;
 
     let duration = start.elapsed(); // Окончание замера времени
 

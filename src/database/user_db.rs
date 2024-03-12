@@ -3,7 +3,7 @@ use mongodb::bson::{doc, Document};
 use mongodb::Collection;
 use crate::auth::sha256::hash_password;
 
-pub async fn set_new_user(db: Arc<Collection<Document>>, password: &str, id: &str) -> mongodb::results::InsertOneResult {
+pub async fn set_new_user(db: &Arc<Collection<Document>>, password: &str, id: &str) -> mongodb::results::InsertOneResult {
     let hashed_password = hash_password(&password);
     let result: mongodb::results::InsertOneResult = db
         .insert_one(
@@ -11,7 +11,7 @@ pub async fn set_new_user(db: Arc<Collection<Document>>, password: &str, id: &st
                 "_id": id,
                 "password": hashed_password,
                 "gameStats": {
-                    "balance":  0i64,
+                    "balance":  "0",
                     "mpc": { "cost": 50i64, "amount": 1i64, "value": 0i64 },
                     "auto": { "cost": 200i64, "amount": 0i64, "value": 0i64 },
                     "triple": { "cost": 500i64, "amount": 0i64, "value": 0i64 },
@@ -33,7 +33,3 @@ pub async fn set_new_user(db: Arc<Collection<Document>>, password: &str, id: &st
     result
 }
 
-
-// pub async  fn update_game_stats(db: Arc<Collection<Document>>, new_data) {
-
-// }

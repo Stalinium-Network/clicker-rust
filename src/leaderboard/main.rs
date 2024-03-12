@@ -16,12 +16,16 @@ pub const MAX_ARR_LEN: usize = 10;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LeaderBoardItem {
     pub id: String,
-    pub balance: i64,
+    pub balance: u128,
 }
 
-pub async fn get_leaderboard() -> Vec<LeaderBoardItem> {
+pub async fn get_leaderboard(len: usize) -> Vec<LeaderBoardItem> {
     let leaderboard_lock = LEADERBOARD.lock().await;
-    return leaderboard_lock.clone();
+    leaderboard_lock.clone()
+        .iter()
+        .take(len)
+        .cloned()
+        .collect()
 }
 
 // вызывать только при регистрании
@@ -35,7 +39,7 @@ pub async fn req_add_user2leaderboard(user_data: LeaderBoardItem) {
     }
 }
 
-pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance: &i64, new_balance: &i64) {
+pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance: &u128, new_balance: &u128) {
     if old_balance == new_balance {
         println!("обновление не пребуется (same balance)");
         return;
@@ -199,7 +203,7 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance
     return;
 }
 
-async fn find_user_pos(target: &i64, leaderboard_lock: &MutexGuard<'_, Vec<LeaderBoardItem>>) -> usize {
+async fn find_user_pos(target: &u128, leaderboard_lock: &MutexGuard<'_, Vec<LeaderBoardItem>>) -> usize {
     if leaderboard_lock.len() == 0 {
         return 0;
     }

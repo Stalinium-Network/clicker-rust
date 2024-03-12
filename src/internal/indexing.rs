@@ -1,6 +1,6 @@
 use mongodb::bson::{doc, Document};
 use mongodb::{Collection, IndexModel};
-use mongodb::options::FindOptions;
+use mongodb::options::{AggregateOptions};
 use futures::stream::StreamExt;
 use crate::internal::logger;
 use crate::leaderboard::main::{LEADERBOARD, LEADERBOARD_MAP, LeaderBoardItem, MAX_ARR_LEN};
@@ -13,10 +13,27 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
 
     let _ = collection.create_index(index_model, None).await;
 
-    let sort = doc! {"gameStats.balance": -1};
-    let find_options = FindOptions::builder().sort(sort).limit(MAX_ARR_LEN as i64).build();
+    let pipeline = vec![
+        doc! {
+        "$addFields": {
+            "numericBalance": {
+                "$toDecimal": "$gameStats.balance"
+            }
+        }
+    },
+        doc! {
+        "$sort": {
+            "numericBalance": -1
+        }
+    },
+        doc! {
+        "$limit": MAX_ARR_LEN as i64
+    },
+    ];
 
-    let mut cursor = collection.find(None, find_options).await?;
+    let aggregate_options = AggregateOptions::builder().build();
+
+    let mut cursor = collection.aggregate(pipeline, aggregate_options).await?;
 
     let mut i: usize = 0;
 
@@ -30,12 +47,18 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
             Ok(doc) => {
                 if let Ok(id) = doc.get_str("_id") {
                     if let Ok(game_stats) = doc.get_document("gameStats") {
-                        if let Ok(balance) = game_stats.get_i64("balance") {
-                            leaderboard_lock.push(LeaderBoardItem { id: id.to_string(), balance });
-                            LEADERBOARD_MAP.insert(id.to_string(), i);
-                            i += 1;
+                        if let Ok(balance_str) = game_stats.get_str("balance") {
+                            if let Ok(balance) = balance_str
+                                .parse::<u128>()
+                            {
+                                leaderboard_lock.push(LeaderBoardItem { id: id.to_string(), balance });
+                                LEADERBOARD_MAP.insert(id.to_string(), i);
+                                i += 1;
+                            } else {
+                                eprintln!("Ошибка при получении balance");
+                            }
                         } else {
-                            eprintln!("Ошибка при получении balance");
+                            eprintln!("Ошибка при получении balance_str");
                         }
                     } else {
                         eprintln!("Ошибка при получении gameStats");
@@ -49,5 +72,6 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
     }
 
     logger::time_end("indexing leaderboard");
+    println!(" [info] - leaderboard loading finished");
     Ok(())
 }

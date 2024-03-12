@@ -17,6 +17,7 @@ mod socket;
 mod database;
 mod leaderboard;
 mod internal;
+mod chat;
 
 
 #[tokio::main]
@@ -38,7 +39,7 @@ async fn main() {
         move |body: Json<LoginRequest>| {
             let shared_collection = Arc::clone(&shared_collection);
             async move {
-                auth::auth::login(body, shared_collection).await // Используйте body.0 для доступа к LoginRequest
+                auth::auth::login(body, shared_collection).await
             }
         }
     };
@@ -61,7 +62,7 @@ async fn main() {
 
     io.ns("/leaderboard", move |_s: SocketRef| {
         async fn handler(_s: SocketRef) {
-            let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
+            let leaderboard = get_leaderboard(7).await; // Получаем leaderboard как Vec<LeaderBoardItem>
             let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
             println!("sended");
@@ -96,14 +97,12 @@ async fn main() {
         let io_clone = io_clone.clone();
 
         tokio::spawn(async move {
-            // logger::time("send leaderboard");
 
-            let leaderboard = get_leaderboard().await; // Получаем leaderboard как Vec<LeaderBoardItem>
+            let leaderboard = get_leaderboard(7).await; // Получаем leaderboard как Vec<LeaderBoardItem>
             let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
             io_clone.emit("leaderboard", serialized_leaderboard).ok();
 
-            // logger::time_end("send leaderboard");
         });
     }, 1_500).await;
 }
