@@ -2,8 +2,9 @@ use mongodb::bson::{doc, Document};
 use mongodb::{Collection, IndexModel};
 use mongodb::options::{AggregateOptions};
 use futures::stream::StreamExt;
+use crate::internal::conf::main::get_conf;
 use crate::internal::logger;
-use crate::leaderboard::main::{LEADERBOARD, LEADERBOARD_MAP, LeaderBoardItem, MAX_ARR_LEN};
+use crate::leaderboard::main::{LEADERBOARD, LEADERBOARD_MAP, LeaderBoardItem};
 
 pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<()> {
     logger::time("indexing leaderboard");
@@ -12,6 +13,8 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
         .build();
 
     let _ = collection.create_index(index_model, None).await;
+
+    let config = get_conf();
 
     let pipeline = vec![
         doc! {
@@ -27,7 +30,7 @@ pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<(
         }
     },
         doc! {
-        "$limit": MAX_ARR_LEN as i64
+        "$limit": config.max_leaderboard_arr as i64
     },
     ];
 

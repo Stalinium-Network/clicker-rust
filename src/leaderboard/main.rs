@@ -2,6 +2,7 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, MutexGuard};
 use dashmap::DashMap;
+use crate::internal::conf::main::get_conf;
 
 lazy_static! {
     pub static ref LEADERBOARD: Mutex<Vec<LeaderBoardItem>> = Mutex::new(Vec::new());
@@ -11,7 +12,7 @@ lazy_static! {
     pub static ref LEADERBOARD_MAP: DashMap<String, usize> = DashMap::new();
 }
 
-pub const MAX_ARR_LEN: usize = 10;
+// pub const MAX_ARR_LEN: usize = 10;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LeaderBoardItem {
@@ -33,7 +34,9 @@ pub async fn req_add_user2leaderboard(user_data: LeaderBoardItem) {
     // если свободное место еше есть
     let mut leaderboard_lock = LEADERBOARD.lock().await;
 
-    if leaderboard_lock.len() < MAX_ARR_LEN {
+    let config = get_conf();
+
+    if leaderboard_lock.len() < config.max_leaderboard_arr {
         LEADERBOARD_MAP.insert(user_data.id.clone(), leaderboard_lock.len());
         leaderboard_lock.push(user_data.clone());
     }
@@ -45,12 +48,14 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance
         return;
     }
 
+    let config = get_conf();
+
     let mut leaderboard_lock = LEADERBOARD.lock().await;
     let last_user = leaderboard_lock[leaderboard_lock.len() - 1].clone();
 
     let user_balance = user_data.balance.clone();
 
-    if leaderboard_lock.len() < MAX_ARR_LEN {
+    if leaderboard_lock.len() < config.max_leaderboard_arr {
         println!(" --  в доске есть незаполненое место");
         // если в доске есть незаполненое место
         let user_pos_in_leaderboard = LEADERBOARD_MAP.get(&user_data.id);
@@ -142,16 +147,6 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance
         return;
     }
 
-
-    // if last_user.balance > user_balance {
-    //     // у нового пользователя слишком малый баланс
-    //     println!(" --  у нового пользователя слишком малый баланс");
-    //     return;
-    // }
-
-    /*
-    -------------------------------------NEW------------------------------------------------
-     */
 
     let mut new_pos = find_user_pos(&user_balance, &leaderboard_lock).await;
 

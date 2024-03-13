@@ -8,6 +8,7 @@ use socketioxide::SocketIo;
 use tokio::net::TcpListener;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use crate::auth::auth::LoginRequest;
+use crate::internal::conf::main::load_conf;
 use crate::internal::set_interval::set_interval;
 use crate::leaderboard::main::get_leaderboard;
 use crate::socket::io::io_on_connect;
@@ -23,6 +24,8 @@ mod chat;
 #[tokio::main]
 async fn main() {
     println!(" [info] Start server");
+
+    let _ = load_conf().await;
 
     let client_options: ClientOptions = ClientOptions::parse("mongodb://localhost:27017").await.unwrap();
     let client: Client = Client::with_options(client_options).unwrap();

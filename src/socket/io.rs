@@ -11,7 +11,7 @@ use serde_json::to_string;
 use socketioxide::socket::DisconnectReason;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use crate::chat::db::add_msg;
+use crate::chat::db::{add_msg, get_messages, MessageItem};
 use crate::leaderboard::main::{get_leaderboard, LeaderBoardItem, update_leaderboard_user_pos};
 use crate::internal::logger;
 
@@ -84,6 +84,13 @@ struct DefaultGameStats {
 struct UserDataObj {
     _id: String,
     gameStats: DefaultGameStats,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct  Data2User {
+    userInfo: Document,
+    messages: Vec<MessageItem>
 }
 
 // строим структуру для хранения цен и статистики
@@ -194,7 +201,10 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         raw: user.clone(),
     }));
 
-    client.emit("data", user.clone()).ok();
+    client.emit("data", Data2User {
+        userInfo: user.clone(),
+        messages: get_messages().await
+    }).ok();
 
     let user_info_lock = user_info.lock().await;
 
