@@ -242,9 +242,7 @@ checksum = "5bc015644b92d5890fab7489e49d21f879d5c990186827d42ec511919404f38b"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
- "js-sys",
  "num-traits",
- "wasm-bindgen",
  "windows-targets 0.52.3",
 ]
 
@@ -253,7 +251,6 @@ name = "clicker"
 version = "0.1.0"
 dependencies = [
  "axum",
- "chrono",
  "dashmap",
  "futures",
  "lazy_static",
@@ -272,10 +269,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
 ]
-
-[[package]]
-name = "conf"
-version = "0.1.0"
 
 [[package]]
 name = "convert_case"
