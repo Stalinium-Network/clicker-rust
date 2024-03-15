@@ -8,7 +8,7 @@ use socketioxide::SocketIo;
 use tokio::net::TcpListener;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use crate::auth::auth::LoginRequest;
-use crate::internal::conf::main::load_conf;
+use crate::internal::conf::main::{get_conf, load_conf};
 use crate::internal::set_interval::set_interval;
 use crate::leaderboard::main::get_leaderboard;
 use crate::socket::io::io_on_connect;
@@ -100,12 +100,12 @@ async fn main() {
         let io_clone = io_clone.clone();
 
         tokio::spawn(async move {
-
-            let leaderboard = get_leaderboard(7).await; // Получаем leaderboard как Vec<LeaderBoardItem>
+            let conf = get_conf();
+            
+            let leaderboard = get_leaderboard(conf.max_mun_of_users2send).await; // Получаем leaderboard как Vec<LeaderBoardItem>
             let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
             io_clone.emit("leaderboard", serialized_leaderboard).ok();
-
         });
     }, 1_500).await;
 }

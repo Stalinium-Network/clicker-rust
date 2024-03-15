@@ -9,8 +9,10 @@ static CONF: once_cell::sync::OnceCell<Arc<ConfStruct>> = once_cell::sync::OnceC
 pub struct ConfStruct {
     pub max_leaderboard_arr: usize,
     pub max_messages_len: usize,
+    pub max_mun_of_users2send: usize,
 }
 
+// загрузка файла конфигурации
 pub async fn load_conf() {
     let mut file = match File::open("./conf.yaml") {
         Ok(file) => file,
@@ -33,6 +35,7 @@ pub async fn load_conf() {
     println!(" [info] Load Config");
 }
 
+// получение концигурации
 pub fn get_conf() -> Arc<ConfStruct> {
     CONF.get().expect("Configuration is not initialized").clone()
 }

@@ -5,14 +5,14 @@ use dashmap::DashMap;
 use crate::internal::conf::main::get_conf;
 
 lazy_static! {
+    // список leaderboard
     pub static ref LEADERBOARD: Mutex<Vec<LeaderBoardItem>> = Mutex::new(Vec::new());
 }
 
 lazy_static! {
+    // вспомогательный HashMap нужен для обновления позиции пользователей
     pub static ref LEADERBOARD_MAP: DashMap<String, usize> = DashMap::new();
 }
-
-// pub const MAX_ARR_LEN: usize = 10;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LeaderBoardItem {
@@ -63,9 +63,6 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance
 
         if last_user.balance > user_balance {
             // добавить в конец
-            /*
-                TODO проверить что пользователь уже в списке
-            */
 
             if last_user.id == user_data.id {
                 // обновление не требуется, пользователь и так в конце списка
@@ -198,6 +195,7 @@ pub async fn update_leaderboard_user_pos(user_data: LeaderBoardItem, old_balance
     return;
 }
 
+// поиск новой позиции для пользователя / Binary Search
 async fn find_user_pos(target: &u128, leaderboard_lock: &MutexGuard<'_, Vec<LeaderBoardItem>>) -> usize {
     if leaderboard_lock.len() == 0 {
         return 0;

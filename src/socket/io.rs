@@ -12,10 +12,13 @@ use socketioxide::socket::DisconnectReason;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use crate::chat::db::{add_msg, get_messages, MessageItem};
+use crate::internal::conf::main::get_conf;
 use crate::leaderboard::main::{get_leaderboard, LeaderBoardItem, update_leaderboard_user_pos};
 use crate::internal::logger;
 
 lazy_static! {
+    // список пользователей в сети
+    // так же нужно для того что бы не разрешать подключения с нескольких устройств на один аккаунт
     static ref USERS_ONLINE: DashMap<String, UserDataLazyStatic> = DashMap::new();
 }
 
@@ -32,7 +35,6 @@ struct UserDataSimpled {
 
 struct UserData {
     raw: Document,
-    // data: DefaultGameStats,
     _id: String,
     balance: u128,
 }
@@ -88,12 +90,13 @@ struct UserDataObj {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[allow(non_snake_case)]
-struct  Data2User {
+struct Data2User {
     userInfo: Document,
-    messages: Vec<MessageItem>
+    messages: Vec<MessageItem>,
 }
 
 // строим структуру для хранения цен и статистики
+// возможно понадобится в будующем, но сейчас убрано, что бы не мешались предупреждения при сборке
 /*
 struct BasePrices {
     auto: u32,
@@ -203,7 +206,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     client.emit("data", Data2User {
         userInfo: user.clone(),
-        messages: get_messages().await
+        messages: get_messages().await,
     }).ok();
 
     let user_info_lock = user_info.lock().await;
@@ -218,6 +221,9 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
     logger::time_end("connection handler");
 
+    /*
+    Обработка события сохранения данных для протокола SocketIO
+     */
     client.on("saveData", move |client: SocketRef, Data::<DefaultGameStats>(data)| async move {
         logger::time("saveData");
         let mut user_data_lock = user_info_for_msg.lock().await;
@@ -257,6 +263,9 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         println!("\n");
     });
 
+    /*
+    Обработка отправки сообшения
+     */
     let user_info_clone = user_info.clone();
     client.on("message", move |client: SocketRef, Data::<String>(mut msg)| async move {
         let user_info_lock = user_info_clone.lock().await;
@@ -267,8 +276,14 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             return;
         }
 
+        if msg.len() > 1_000 {
+            return;
+        }
+
         let msg_obj = add_msg(user_info_lock._id.clone(), msg).await;
         _io.emit("message", msg_obj).ok();
+
+        // TODO защита от спама
     });
 
     let user_info_for_msg = user_info.clone();
@@ -300,11 +315,11 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
 
         let _ = db_client_clone.update_one(
             doc! {
-"_id": user_data_lock._id.clone()
-},
+                    "_id": user_data_lock._id.clone()
+                },
             doc! {
-"$set": { "gameStats": game_stats }
-}, None,
+                "$set": { "gameS tats": game_stats }
+            }, None,
         ).await;
 
         let id = user_data_lock._id.clone();
@@ -324,7 +339,8 @@ fn parse_query_string(query: &str) -> HashMap<String, String> {
 
 
 async fn send_leaderboard(s: &SocketRef) {
-    let leaderboard: Vec<LeaderBoardItem> = get_leaderboard(7).await; // Получаем leaderboard как Vec<LeaderBoardItem>
+    let conf = get_conf();
+    let leaderboard: Vec<LeaderBoardItem> = get_leaderboard(conf.max_mun_of_users2send).await; // Получаем leaderboard как Vec<LeaderBoardItem>
     let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
     s.emit("leaderboard", serialized_leaderboard).ok();

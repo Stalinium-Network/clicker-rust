@@ -7,6 +7,9 @@ lazy_static! {
     static ref MAP: Arc<DashMap<String, Instant>> = Arc::new(DashMap::new());
 }
 
+/**
+Аналог console.time() и console.timEnd() из NodeJS для измерения времени выполнения кода
+**/
 
 pub fn time(id: &str) {
     let _time = Instant::now();

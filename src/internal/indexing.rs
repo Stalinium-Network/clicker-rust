@@ -6,6 +6,7 @@ use crate::internal::conf::main::get_conf;
 use crate::internal::logger;
 use crate::leaderboard::main::{LEADERBOARD, LEADERBOARD_MAP, LeaderBoardItem};
 
+// загрузка пользователей в leaderboard при старте сервера
 pub async fn main(collection: &Collection<Document>) -> mongodb::error::Result<()> {
     logger::time("indexing leaderboard");
     let index_model = IndexModel::builder()
