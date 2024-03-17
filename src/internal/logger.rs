@@ -9,7 +9,7 @@ lazy_static! {
 
 /**
 Аналог console.time() и console.timEnd() из NodeJS для измерения времени выполнения кода
-**/
+ **/
 
 pub fn time(id: &str) {
     let _time = Instant::now();
@@ -23,3 +23,14 @@ pub fn time_end(id: &str) {
         println!(" logger err nf-2")
     }
 }
+
+/*
+Функция для вывода данных в консоль только в debug сборке
+*/
+#[cfg(debug_assertions)]
+pub fn debug(text: &str) {
+    println!(" [debug] {}", text);
+}
+
+#[cfg(not(debug_assertions))]
+pub fn debug(text: &str) {}

@@ -194,8 +194,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
     // удалить пароль из данных пользователя
     user.remove("password");
 
-
-    println!("connected");
+    logger::debug("connected");
 
     let user_obj: DefaultGameStats = bson::from_document(user.get_document("gameStats").unwrap().clone()).unwrap();
     let user_info = Arc::new(Mutex::new(UserData {
@@ -237,17 +236,14 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             }
         };
 
-        println!("balance: {:?}", data.balance);
+        logger::debug(&format!("balance: {:?}", data.balance));
         let new_balance: u128 = data.balance.parse::<u128>().unwrap();
 
-        logger::time("update_leaderboard_user_pos()");
         update_leaderboard_user_pos(
             LeaderBoardItem { id: user_data_lock._id.clone(), balance: new_balance },
             &user_data_lock.balance,
             &new_balance,
         ).await;
-        logger::time_end("update_leaderboard_user_pos()");
-
 
         user_data_lock.raw.insert("gameStats", game_stats_doc.clone());
         user_data_lock.balance = new_balance;
@@ -268,21 +264,24 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
      */
     let user_info_clone = user_info.clone();
     client.on("message", move |client: SocketRef, Data::<String>(mut msg)| async move {
+        logger::time("send message");
         let user_info_lock = user_info_clone.lock().await;
         msg = msg.trim().to_string();
-        println!("{:?}", msg);
 
         if msg == "" {
             return;
         }
 
-        if msg.len() > 1_000 {
+        let conf = get_conf();
+
+        if msg.len() > conf.max_message_length {
             return;
         }
 
         let msg_obj = add_msg(user_info_lock._id.clone(), msg).await;
         _io.emit("message", msg_obj).ok();
 
+        logger::time_end("send message");
         // TODO защита от спама
     });
 

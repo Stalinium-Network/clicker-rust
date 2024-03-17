@@ -68,7 +68,6 @@ async fn main() {
             let leaderboard = get_leaderboard(7).await; // Получаем leaderboard как Vec<LeaderBoardItem>
             let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
-            println!("sended");
             _s.emit("leaderboard", serialized_leaderboard).ok();
         }
 
@@ -83,8 +82,8 @@ async fn main() {
     let app = Router::new()
         .route("/login", post(login_route))
         .route("/signup", post(register_route))
-        .layer(layout) // Применение слоя Socket.IO
-        .layer(cors) // Применение слоя CORS
+        .layer(layout) // Применение Socket.IO
+        .layer(cors) // Применение CORS
         .layer(CorsLayer::permissive());
 
     let listener = TcpListener::bind("127.0.0.1:3001").await.unwrap();
@@ -94,6 +93,7 @@ async fn main() {
             .await;
     });
 
+    let conf = get_conf();
 
     let io_clone = io.clone();
     set_interval(move || {
@@ -101,12 +101,11 @@ async fn main() {
 
         tokio::spawn(async move {
             let conf = get_conf();
-            
+
             let leaderboard = get_leaderboard(conf.max_mun_of_users2send).await; // Получаем leaderboard как Vec<LeaderBoardItem>
             let serialized_leaderboard = to_string(&leaderboard).expect("Не удалось сериализовать leaderboard");
 
             io_clone.emit("leaderboard", serialized_leaderboard).ok();
         });
-    }, 1_500).await;
+    }, conf.send_leaderboard_interval as u64).await;
 }
-
