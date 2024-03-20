@@ -7,6 +7,7 @@ static CONF: once_cell::sync::OnceCell<Arc<ConfStruct>> = once_cell::sync::OnceC
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ConfStruct {
+    pub port: usize,
     pub max_leaderboard_arr: usize,
     pub max_messages_len: usize,
     pub max_mun_of_users2send: usize,

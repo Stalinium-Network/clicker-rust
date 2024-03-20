@@ -1,3 +1,4 @@
+port: 3000
 max_leaderboard_arr: 20 # ошраничение на кол-во пользователей в leaderboard
 max_messages_len: 100 # ограничение на кол-во сохраняемых сообщений
 max_mun_of_users2send: 7 # кол-во пользователей, которые будут отображаться в leaderboard

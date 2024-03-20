@@ -23,7 +23,7 @@ mod chat;
 
 #[tokio::main]
 async fn main() {
-    println!(" [info] Start server");
+    println!(" [info] Starting server");
 
     let _ = load_conf().await;
 
@@ -86,14 +86,16 @@ async fn main() {
         .layer(cors) // Применение CORS
         .layer(CorsLayer::permissive());
 
-    let listener = TcpListener::bind("127.0.0.1:3001").await.unwrap();
+    let conf = get_conf();
+
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", conf.port)).await.unwrap();
+
+    println!(" [info] Server listen port {}", conf.port);
 
     let _ = tokio::spawn(async move {
         let _ = axum::serve(listener, app.into_make_service())
             .await;
     });
-
-    let conf = get_conf();
 
     let io_clone = io.clone();
     set_interval(move || {
