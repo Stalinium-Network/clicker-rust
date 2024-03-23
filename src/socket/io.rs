@@ -37,6 +37,12 @@ struct UserData {
     raw: Document,
     _id: String,
     balance: u128,
+    sended_messages: SendedMessagesStruct,
+}
+
+struct SendedMessagesStruct {
+    timestamp: Instant,
+    count: u32,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -95,6 +101,8 @@ struct Data2User {
     messages: Vec<MessageItem>,
 }
 
+
+const HALF_MINUTE: u128 = 20 * 1000;
 // строим структуру для хранения цен и статистики
 // возможно понадобится в будующем, но сейчас убрано, что бы не мешались предупреждения при сборке
 /*
@@ -201,6 +209,10 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         balance: user_obj.balance.parse::<u128>().unwrap_or(0),
         _id: id.clone(),
         raw: user.clone(),
+        sended_messages: SendedMessagesStruct {
+            timestamp: Instant::now(),
+            count: 0,
+        },
     }));
 
     client.emit("data", Data2User {
@@ -265,11 +277,31 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
     let user_info_clone = user_info.clone();
     client.on("message", move |client: SocketRef, Data::<String>(mut msg)| async move {
         logger::time("send message");
-        let user_info_lock = user_info_clone.lock().await;
+        let mut user_info_lock = user_info_clone.lock().await;
         msg = msg.trim().to_string();
 
         if msg == "" {
             return;
+        }
+
+        let timestamp = Instant::now();
+        let user_timestamp = user_info_lock.sended_messages.timestamp;
+
+        let dif = timestamp.duration_since(user_timestamp).as_millis();
+
+        if dif > HALF_MINUTE {
+            // временной класстер закончился, сбрасываем таймер
+            user_info_lock.sended_messages.timestamp = timestamp;
+            user_info_lock.sended_messages.count = 0;
+        } else {
+            user_info_lock.sended_messages.count += 1;
+            // если пользователь отправил больше n сообшений за 30 сек
+            let conf = get_conf();
+
+            if user_info_lock.sended_messages.count > conf.max_messages_per_half_minute {
+                client.emit("error", "Too many messages, please wait").ok();
+                return;
+            }
         }
 
         let conf = get_conf();
@@ -282,7 +314,6 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         _io.emit("message", msg_obj).ok();
 
         logger::time_end("send message");
-        // TODO защита от спама
     });
 
     let user_info_for_msg = user_info.clone();
@@ -293,9 +324,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         let user_data_lock = user_info_for_msg.lock().await;
         let db_client_clone = db_client.clone();
 
-        let data = user_data_lock.raw.clone();
-
-        let game_stats_doc = match to_document(&data) {
+        let game_stats_doc = match to_document(&user_data_lock.raw) {
             Ok(doc) => doc,
             Err(e) => {
                 eprintln!("Ошибка при сериализации данных игры: {:?}", e);
@@ -317,7 +346,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
                     "_id": user_data_lock._id.clone()
                 },
             doc! {
-                "$set": { "gameS tats": game_stats }
+                "$set": { "gameStats": game_stats }
             }, None,
         ).await;
 

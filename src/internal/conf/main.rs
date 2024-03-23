@@ -13,6 +13,7 @@ pub struct ConfStruct {
     pub max_mun_of_users2send: usize,
     pub max_message_length: usize,
     pub send_leaderboard_interval: usize,
+    pub max_messages_per_half_minute: u32
 }
 
 // загрузка файла конфигурации
