@@ -23,6 +23,8 @@ mod chat;
 
 #[tokio::main]
 async fn main() {
+    internal::symbol_art_logger::main::log();
+
     println!(" [info] Starting server");
 
     let _ = load_conf().await;
