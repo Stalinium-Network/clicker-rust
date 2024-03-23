@@ -284,6 +284,12 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             return;
         }
 
+        let conf = get_conf();
+
+        if msg.len() > conf.max_message_length {
+            return;
+        }
+
         let timestamp = Instant::now();
         let user_timestamp = user_info_lock.sended_messages.timestamp;
 
@@ -296,7 +302,6 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
         } else {
             user_info_lock.sended_messages.count += 1;
             // если пользователь отправил больше n сообшений за 30 сек
-            let conf = get_conf();
 
             if user_info_lock.sended_messages.count > conf.max_messages_per_half_minute {
                 client.emit("error", "Too many messages, please wait").ok();
@@ -304,11 +309,7 @@ pub async fn io_on_connect(client: SocketRef, shared_collection: Arc<Collection<
             }
         }
 
-        let conf = get_conf();
 
-        if msg.len() > conf.max_message_length {
-            return;
-        }
 
         let msg_obj = add_msg(user_info_lock._id.clone(), msg).await;
         _io.emit("message", msg_obj).ok();
